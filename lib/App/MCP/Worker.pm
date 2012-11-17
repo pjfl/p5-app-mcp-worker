@@ -7,7 +7,89 @@ use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev$ =~ /\d+/gmx );
 
 use Class::Usul::Moose;
 use Class::Usul::Constants;
-use Class::Usul::Functions qw(throw);
+use Class::Usul::Crypt     qw(encrypt);
+use Class::Usul::Functions qw(pad);
+use English                qw(-no_match_vars);
+use HTTP::Request::Common  qw(POST);
+use LWP::UserAgent;
+use MooseX::Types          -declare => [ qw(ServerList) ];
+use Storable               qw(nfreeze);
+use TryCatch;
+
+extends q(Class::Usul::Programs);
+
+subtype ServerList, as ArrayRef;
+coerce  ServerList, from Str, via { [ split SPC, $_ ] };
+
+has 'command'    => is => 'ro', isa => NonEmptySimpleStr, required => TRUE;
+
+has 'port'       => is => 'ro', isa => PositiveInt,       default  => 2012;
+
+has 'protocol'   => is => 'ro', isa => NonEmptySimpleStr, default  => 'http';
+
+has 'job_id'     => is => 'ro', isa => PositiveInt,       required => TRUE;
+
+has 'runid'      => is => 'ro', isa => NonEmptySimpleStr, required => TRUE;
+
+has 'servers'    => is => 'ro', isa => ServerList,        coerce   => TRUE,
+   required      => TRUE;
+
+has 'token'      => is => 'ro', isa => NonEmptySimpleStr;
+
+has 'uri_format' => is => 'ro', isa => NonEmptySimpleStr,
+   default       => 'api/event/%s';
+
+sub dispatch {
+   my $self = shift;
+
+   my $r = $self->run_cmd( [ sub { $self->_run_command } ], { async => TRUE } );
+
+   return $r->out;
+}
+
+sub provision {
+   
+}
+
+# Private methods
+
+sub _run_command {
+   my $self = shift; my $r;
+
+   $self->_send_event( 'running' );
+
+   try        { $r = $self->run_cmd( [ split SPC, $self->command ] ) }
+   catch ($e) { $self->_send_event( 'terminated' ); return }
+
+   $self->_send_event( 'finished', $r );
+   return;
+};
+
+sub _send_event {
+   my ($self, $state, $r) = @_;
+
+   my $ua  = LWP::UserAgent->new;
+   my $tag = pad uc $state, 10, SPC, 'left';
+   my $msg = $r ? 'Rv '.$r->rv : 'Runid '.$self->runid;
+   my $evt = { job_id => $self->job_id, pid  => $PID, runid => $self->runid,
+               state  => $state,        type => 'state_update', };
+
+   $self->log->info( "${tag}[${PID}]: ${msg}" );
+   $r and $evt->{rv} = $r->rv; $evt = nfreeze $evt;
+   $self->token and $evt = encrypt $self->token, $evt;
+
+   for my $server (@{ $self->servers }) {
+      my $uri  = $self->protocol."://${server}:".$self->port.'/';
+         $uri .= sprintf $self->uri_format, $self->runid;
+      my $req  = POST $uri, [ event => $evt ];
+      my $res  = $ua->request( $req );
+
+      if ($res->is_success) { $self->log->info( $res->as_string ) }
+      else { $self->log->error( $res->status_line ) }
+   }
+
+   return;
+}
 
 __PACKAGE__->meta->make_immutable;
 
