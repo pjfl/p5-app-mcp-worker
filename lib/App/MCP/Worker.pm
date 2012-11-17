@@ -8,8 +8,10 @@ use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev$ =~ /\d+/gmx );
 use Class::Usul::Moose;
 use Class::Usul::Constants;
 use Class::Usul::Crypt     qw(encrypt);
-use Class::Usul::Functions qw(pad);
+use Class::Usul::Functions qw(app_prefix pad throw);
 use English                qw(-no_match_vars);
+use File::HomeDir;
+use File::DataClass::IO;
 use HTTP::Request::Common  qw(POST);
 use LWP::UserAgent;
 use MooseX::Types          -declare => [ qw(ServerList) ];
@@ -37,7 +39,7 @@ has 'servers'    => is => 'ro', isa => ServerList,        coerce   => TRUE,
 has 'token'      => is => 'ro', isa => NonEmptySimpleStr;
 
 has 'uri_format' => is => 'ro', isa => NonEmptySimpleStr,
-   default       => 'api/event/%s';
+   default       => 'api/event?runid=%s';
 
 sub dispatch {
    my $self = shift;
@@ -48,7 +50,19 @@ sub dispatch {
 }
 
 sub provision {
-   
+   my $appclass = shift; $appclass or throw 'No appclass';
+   my $prefix   = app_prefix $appclass;
+   my $home     = File::HomeDir->my_home;
+   my $appldir  = io( [ $home, ".${prefix}" ] );
+      $appldir->exists or $appldir->mkpath( 0750 );
+   my $logsdir  = $appldir->catdir( 'logs' );
+      $logsdir->exists or $logsdir->mkpath( 0750 );
+   my $tempdir  = $appldir->catdir( 'tmp' );
+      $tempdir->exists or $tempdir->mkpath( 0750 );
+   my $cfgfile  = $appldir->catfile( "${prefix}.json" );
+      $cfgfile->exists or $cfgfile->print( __config_file_content() );
+
+   return "Provisioned ${appldir}";
 }
 
 # Private methods
@@ -68,13 +82,14 @@ sub _run_command {
 sub _send_event {
    my ($self, $state, $r) = @_;
 
-   my $ua  = LWP::UserAgent->new;
-   my $tag = pad uc $state, 10, SPC, 'left';
-   my $msg = $r ? 'Rv '.$r->rv : 'Runid '.$self->runid;
-   my $evt = { job_id => $self->job_id, pid  => $PID, runid => $self->runid,
-               state  => $state,        type => 'state_update', };
+   my $runid  = $self->runid;
+   my $ua     = LWP::UserAgent->new;
+   my $evt    = { job_id => $self->job_id, pid  => $PID, runid => $runid,
+                  state  => $state,        type => 'state_update', };
+   my $tag    = pad uc $state, 10, SPC, 'left';
+   my $prefix = "${tag}[${runid}]: ";
 
-   $self->log->info( "${tag}[${PID}]: ${msg}" );
+   $self->log->debug( $prefix.($r ? 'Rv '.$r->rv : "Pid ${PID}") );
    $r and $evt->{rv} = $r->rv; $evt = nfreeze $evt;
    $self->token and $evt = encrypt $self->token, $evt;
 
@@ -84,11 +99,15 @@ sub _send_event {
       my $req  = POST $uri, [ event => $evt ];
       my $res  = $ua->request( $req );
 
-      if ($res->is_success) { $self->log->info( $res->as_string ) }
-      else { $self->log->error( $res->status_line ) }
+      if ($res->is_success) { $self->log->debug( "${prefix}Code ".$res->code ) }
+      else { $self->log->error( $prefix.$res->message ) }
    }
 
    return;
+}
+
+sub __config_file_content {
+   return "{\n   \"name\" : \"worker\"\n}\n";
 }
 
 __PACKAGE__->meta->make_immutable;
