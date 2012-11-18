@@ -7,15 +7,17 @@ use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev$ =~ /\d+/gmx );
 
 use Class::Usul::Moose;
 use Class::Usul::Constants;
-use Class::Usul::Crypt     qw(encrypt);
-use Class::Usul::Functions qw(app_prefix pad throw);
-use English                qw(-no_match_vars);
-use File::HomeDir;
+use Class::Usul::Crypt           qw(encrypt);
+use Class::Usul::Functions       qw(app_prefix pad throw);
+use Cwd                          qw(getcwd);
+use English                      qw(-no_match_vars);
+use File::DataClass::Constraints qw(Directory);
 use File::DataClass::IO;
-use HTTP::Request::Common  qw(POST);
+use File::HomeDir;
+use HTTP::Request::Common        qw(POST);
 use LWP::UserAgent;
-use MooseX::Types          -declare => [ qw(ServerList) ];
-use Storable               qw(nfreeze);
+use MooseX::Types  -declare => [ qw(ServerList) ];
+use Storable                     qw(nfreeze);
 use TryCatch;
 
 extends q(Class::Usul::Programs);
@@ -24,6 +26,8 @@ subtype ServerList, as ArrayRef;
 coerce  ServerList, from Str, via { [ split SPC, $_ ] };
 
 has 'command'    => is => 'ro', isa => NonEmptySimpleStr, required => TRUE;
+
+has 'directory'  => is => 'ro', isa => Directory | SimpleStr;
 
 has 'port'       => is => 'ro', isa => PositiveInt,       default  => 2012;
 
@@ -36,7 +40,7 @@ has 'runid'      => is => 'ro', isa => NonEmptySimpleStr, required => TRUE;
 has 'servers'    => is => 'ro', isa => ServerList,        coerce   => TRUE,
    required      => TRUE;
 
-has 'token'      => is => 'ro', isa => NonEmptySimpleStr;
+has 'token'      => is => 'ro', isa => SimpleStr;
 
 has 'uri_format' => is => 'ro', isa => NonEmptySimpleStr,
    default       => 'api/event?runid=%s';
@@ -72,7 +76,10 @@ sub _run_command {
 
    $self->_send_event( 'running' );
 
-   try        { $r = $self->run_cmd( [ split SPC, $self->command ] ) }
+   try {
+      $self->directory and __chdir( $self->directory );
+      $r = $self->run_cmd( [ split SPC, $self->command ] );
+   }
    catch ($e) { $self->_send_event( 'terminated' ); return }
 
    $self->_send_event( 'finished', $r );
@@ -104,6 +111,15 @@ sub _send_event {
    }
 
    return;
+}
+
+# Private functions
+
+sub __chdir {
+   $_[ 0 ] or throw 'Directory not specified'; chdir $_[ 0 ];
+   $_[ 0 ] eq getcwd or throw error => 'Path [_1] cannot change to',
+                              args  => [ $_[ 0 ] ];
+   return $_[ 0 ];
 }
 
 sub __config_file_content {
