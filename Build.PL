@@ -25,8 +25,8 @@ Bob->new( {
 } )->create_build_script; # Goal!
 
 # Local Variables:
-# tab-title: App::MCP::Worker
 # eval: (load-project-state "app-mcp-worker")
 # mode: perl
+# tab-title: Worker
 # tab-width: 3
 # End:

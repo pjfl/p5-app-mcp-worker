@@ -74,26 +74,26 @@ sub provision {
 sub _run_command {
    my $self = shift; my $r;
 
-   $self->_send_event( 'running' );
+   $self->_send_event( 'started' );
 
    try {
       $self->directory and __chdir( $self->directory );
       $r = $self->run_cmd( [ split SPC, $self->command ] );
    }
-   catch ($e) { $self->_send_event( 'terminated' ); return }
+   catch ($e) { $self->_send_event( 'terminate' ); return }
 
-   $self->_send_event( 'finished', $r );
+   $self->_send_event( 'finish', $r );
    return;
 };
 
 sub _send_event {
-   my ($self, $state, $r) = @_;
+   my ($self, $transition, $r) = @_;
 
    my $runid  = $self->runid;
    my $ua     = LWP::UserAgent->new;
-   my $evt    = { job_id => $self->job_id, pid  => $PID, runid => $runid,
-                  state  => $state,        type => 'state_update', };
-   my $tag    = pad uc $state, 10, SPC, 'left';
+   my $evt    = { job_id     => $self->job_id, pid => $PID, runid => $runid,
+                  transition => $transition, };
+   my $tag    = pad uc $transition, 9, SPC, 'left';
    my $prefix = "${tag}[${runid}]: ";
 
    $self->log->debug( $prefix.($r ? 'Rv '.$r->rv : "Pid ${PID}") );
