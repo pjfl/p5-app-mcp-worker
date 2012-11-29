@@ -13,7 +13,7 @@ use Cwd                          qw(getcwd);
 use English                      qw(-no_match_vars);
 use File::DataClass::Constraints qw(Directory);
 use File::DataClass::IO;
-use File::HomeDir;
+use File::HomeDir                  ();
 use HTTP::Request::Common        qw(POST);
 use LWP::UserAgent;
 use MooseX::Types  -declare => [ qw(ServerList) ];
@@ -91,20 +91,19 @@ sub _send_event {
 
    my $runid  = $self->runid;
    my $ua     = LWP::UserAgent->new;
-   my $evt    = { job_id     => $self->job_id, pid => $PID, runid => $runid,
-                  transition => $transition, };
+   my $event  = { job_id => $self->job_id, pid        => $PID,
+                  runid  => $runid,        transition => $transition, };
    my $tag    = pad uc $transition, 9, SPC, 'left';
    my $prefix = "${tag}[${runid}]: ";
 
    $self->log->debug( $prefix.($r ? 'Rv '.$r->rv : "Pid ${PID}") );
-   $r and $evt->{rv} = $r->rv; $evt = nfreeze $evt;
-   $self->token and $evt = encrypt $self->token, $evt;
+   $r and $event->{rv} = $r->rv; $event = nfreeze $event;
+   $self->token and $event = encrypt $self->token, $event;
 
    for my $server (@{ $self->servers }) {
       my $uri  = $self->protocol."://${server}:".$self->port.'/';
          $uri .= sprintf $self->uri_format, $self->runid;
-      my $req  = POST $uri, [ event => $evt ];
-      my $res  = $ua->request( $req );
+      my $res  = $ua->request( POST $uri, [ event => $event ] );
 
       if ($res->is_success) { $self->log->debug( "${prefix}Code ".$res->code ) }
       else { $self->log->error( $prefix.$res->message ) }
