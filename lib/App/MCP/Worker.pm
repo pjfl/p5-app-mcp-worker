@@ -73,8 +73,7 @@ sub _send_event {
    my $ua     = LWP::UserAgent->new;
    my $event  = { job_id => $self->job_id, pid        => $PID,
                   runid  => $runid,        transition => $transition, };
-   my $tag    = pad uc $transition, 9, SPC, 'left';
-   my $prefix = "${tag}[${runid}]: ";
+   my $prefix = (pad uc $transition, 9, SPC, 'left')."[${runid}]: ";
 
    $self->log->debug( $prefix.($r ? 'Rv '.$r->rv : "Pid ${PID}") );
    $r and $event->{rv} = $r->rv; $event = nfreeze $event;
