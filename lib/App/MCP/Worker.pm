@@ -8,12 +8,10 @@ use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev$ =~ /\d+/gmx );
 use Class::Usul::Moose;
 use Class::Usul::Constants;
 use Class::Usul::Crypt           qw(encrypt);
-use Class::Usul::Functions       qw(app_prefix pad throw);
+use Class::Usul::Functions       qw(pad throw);
 use Cwd                          qw(getcwd);
 use English                      qw(-no_match_vars);
 use File::DataClass::Constraints qw(Directory);
-use File::DataClass::IO;
-use File::HomeDir                  ();
 use HTTP::Request::Common        qw(POST);
 use LWP::UserAgent;
 use MooseX::Types  -declare => [ qw(ServerList) ];
@@ -37,8 +35,8 @@ has 'job_id'     => is => 'ro', isa => PositiveInt,       required => TRUE;
 
 has 'runid'      => is => 'ro', isa => NonEmptySimpleStr, required => TRUE;
 
-has 'servers'    => is => 'ro', isa => ServerList,        coerce   => TRUE,
-   required      => TRUE;
+has 'servers'    => is => 'ro', isa => ServerList,        required => TRUE,
+   auto_deref    => TRUE,    coerce => TRUE;
 
 has 'token'      => is => 'ro', isa => SimpleStr;
 
@@ -53,28 +51,10 @@ sub dispatch {
    return $r->out;
 }
 
-sub provision {
-   my $appclass = shift; $appclass or throw 'No appclass';
-   my $prefix   = app_prefix $appclass;
-   my $home     = File::HomeDir->my_home;
-   my $appldir  = io( [ $home, ".${prefix}" ] );
-      $appldir->exists or $appldir->mkpath( 0750 );
-   my $logsdir  = $appldir->catdir( 'logs' );
-      $logsdir->exists or $logsdir->mkpath( 0750 );
-   my $tempdir  = $appldir->catdir( 'tmp' );
-      $tempdir->exists or $tempdir->mkpath( 0750 );
-   my $cfgfile  = $appldir->catfile( "${prefix}.json" );
-      $cfgfile->exists or $cfgfile->print( __config_file_content() );
-
-   return "Provisioned ${appldir}";
-}
-
 # Private methods
 
 sub _run_command {
-   my $self = shift; my $r;
-
-   $self->_send_event( 'started' );
+   my $self = shift; my $r; $self->_send_event( 'started' );
 
    try {
       $self->directory and __chdir( $self->directory );
@@ -100,7 +80,7 @@ sub _send_event {
    $r and $event->{rv} = $r->rv; $event = nfreeze $event;
    $self->token and $event = encrypt $self->token, $event;
 
-   for my $server (@{ $self->servers }) {
+   for my $server ($self->servers) {
       my $uri  = $self->protocol."://${server}:".$self->port.'/';
          $uri .= sprintf $self->uri_format, $self->runid;
       my $res  = $ua->request( POST $uri, [ event => $event ] );
@@ -119,10 +99,6 @@ sub __chdir {
    $_[ 0 ] eq getcwd or throw error => 'Path [_1] cannot change to',
                               args  => [ $_[ 0 ] ];
    return $_[ 0 ];
-}
-
-sub __config_file_content {
-   return "{\n   \"name\" : \"worker\"\n}\n";
 }
 
 __PACKAGE__->meta->make_immutable;
