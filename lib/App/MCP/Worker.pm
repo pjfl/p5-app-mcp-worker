@@ -1,9 +1,9 @@
-# @(#)$Id$
+# @(#)$Ident: Worker.pm 2013-04-30 23:14 pjf ;
 
 package App::MCP::Worker;
 
 use strict;
-use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev$ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 3 $ =~ /\d+/gmx );
 
 use Class::Usul::Moose;
 use Class::Usul::Constants;
@@ -114,7 +114,7 @@ App::MCP::Worker - <One-line description of module's purpose>
 
 =head1 Version
 
-0.1.$Revision$
+This documents version v0.1.$Rev: 3 $
 
 =head1 Synopsis
 

@@ -1,18 +1,18 @@
-# @(#)$Id$
+# @(#)$Ident: Build.PL 2013-04-30 23:17 pjf ;
 
 use strict;
 use warnings;
 use inc::Bob; # Module::Build subclass
-use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev$ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 3 $ =~ /\d+/gmx );
 
 Bob->new( {
-   module     => q(App::MCP::Worker),
-   home_page  => q(http://www.roxsoft.co.uk),
-   requires   => {
+   module    => q(App::MCP::Worker),
+   home_page => q(http://www.roxsoft.co.uk),
+   requires  => {
       'perl'             => 5.010,
       'version'          => 0.77,
-      'Class::Usul'      => q(0.9.0),
-      'File::DataClass'  => q(0.12.0),
+      'Class::Usul'      => q(0.17.0),
+      'File::DataClass'  => q(0.18.0),
    },
    recommends            => {
       'App::cpanminus'   => 1.4004 },
