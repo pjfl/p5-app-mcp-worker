@@ -1,48 +1,54 @@
-# @(#)$Ident: Worker.pm 2013-04-30 23:14 pjf ;
+# @(#)$Ident: Worker.pm 2013-06-24 16:15 pjf ;
 
 package App::MCP::Worker;
 
-use strict;
-use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 3 $ =~ /\d+/gmx );
+use 5.01;
+use namespace::sweep;
+use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 4 $ =~ /\d+/gmx );
 
-use Class::Usul::Moose;
 use Class::Usul::Constants;
-use Class::Usul::Crypt           qw(encrypt);
-use Class::Usul::Functions       qw(pad throw);
-use Cwd                          qw(getcwd);
-use English                      qw(-no_match_vars);
-use File::DataClass::Constraints qw(Directory);
-use HTTP::Request::Common        qw(POST);
+use Class::Usul::Crypt      qw( encrypt );
+use Class::Usul::Functions  qw( pad throw );
+use Cwd                     qw( getcwd );
+use English                 qw( -no_match_vars );
+use File::DataClass::Types  qw( ArrayRef Directory NonEmptySimpleStr
+                                NonZeroPositiveInt SimpleStr Str );
+use HTTP::Request::Common   qw( POST );
 use LWP::UserAgent;
-use MooseX::Types  -declare => [ qw(ServerList) ];
-use Storable                     qw(nfreeze);
+use Moo;
+use MooX::Options;
+use Storable                qw( nfreeze );
 use TryCatch;
+use Type::Utils             qw( as coerce from subtype via );
 
 extends q(Class::Usul::Programs);
+with    q(Class::Usul::TraitFor::UntaintedGetopts);
 
-subtype ServerList, as ArrayRef;
-coerce  ServerList, from Str, via { [ split SPC, $_ ] };
+my $ServerList = subtype as ArrayRef;
 
-has 'command'    => is => 'ro', isa => NonEmptySimpleStr, required => TRUE;
+coerce $ServerList, from Str, via { [ split SPC, $_ ] };
 
-has 'directory'  => is => 'ro', isa => Directory | SimpleStr;
+option 'command'    => is => 'ro', isa => NonEmptySimpleStr,  required => TRUE;
 
-has 'port'       => is => 'ro', isa => PositiveInt,       default  => 2012;
+option 'directory'  => is => 'ro', isa => Directory | SimpleStr;
 
-has 'protocol'   => is => 'ro', isa => NonEmptySimpleStr, default  => 'http';
+option 'port'       => is => 'ro', isa => NonZeroPositiveInt, default => 2012;
 
-has 'job_id'     => is => 'ro', isa => PositiveInt,       required => TRUE;
+option 'protocol'   => is => 'ro', isa => NonEmptySimpleStr,  default => 'http';
 
-has 'runid'      => is => 'ro', isa => NonEmptySimpleStr, required => TRUE;
+option 'job_id'     => is => 'ro', isa => NonZeroPositiveInt, required => TRUE;
 
-has 'servers'    => is => 'ro', isa => ServerList,        required => TRUE,
-   auto_deref    => TRUE,    coerce => TRUE;
+option 'runid'      => is => 'ro', isa => NonEmptySimpleStr,  required => TRUE;
 
-has 'token'      => is => 'ro', isa => SimpleStr;
+option 'servers'    => is => 'ro', isa => $ServerList,        required => TRUE,
+   coerce           => $ServerList->coercion;
 
-has 'uri_format' => is => 'ro', isa => NonEmptySimpleStr,
-   default       => 'api/event?runid=%s';
+option 'token'      => is => 'ro', isa => SimpleStr;
 
+option 'uri_format' => is => 'ro', isa => NonEmptySimpleStr,
+   default          => 'api/event?runid=%s';
+
+# Public methods
 sub dispatch {
    my $self = shift;
 
@@ -52,7 +58,6 @@ sub dispatch {
 }
 
 # Private methods
-
 sub _run_command {
    my $self = shift; my $r; $self->_send_event( 'started' );
 
@@ -79,7 +84,7 @@ sub _send_event {
    $r and $event->{rv} = $r->rv; $event = nfreeze $event;
    $self->token and $event = encrypt $self->token, $event;
 
-   for my $server ($self->servers) {
+   for my $server (@{ $self->servers }) {
       my $uri  = $self->protocol."://${server}:".$self->port.'/';
          $uri .= sprintf $self->uri_format, $self->runid;
       my $res  = $ua->request( POST $uri, [ event => $event ] );
@@ -92,15 +97,13 @@ sub _send_event {
 }
 
 # Private functions
-
 sub __chdir {
-   $_[ 0 ] or throw 'Directory not specified'; chdir $_[ 0 ];
-   $_[ 0 ] eq getcwd or throw error => 'Path [_1] cannot change to',
-                              args  => [ $_[ 0 ] ];
-   return $_[ 0 ];
-}
+   my $dir = shift; $dir or throw 'Directory not specified in chdir';
 
-__PACKAGE__->meta->make_immutable;
+   chdir $dir or throw error => 'Directory [_1] cannot chdir: [_2]',
+                        args => [ $dir, $OS_ERROR ];
+   return $dir;
+}
 
 1;
 
@@ -114,7 +117,7 @@ App::MCP::Worker - <One-line description of module's purpose>
 
 =head1 Version
 
-This documents version v0.1.$Rev: 3 $
+This documents version v0.1.$Rev: 4 $
 
 =head1 Synopsis
 
@@ -124,6 +127,30 @@ This documents version v0.1.$Rev: 3 $
 =head1 Description
 
 =head1 Configuration and Environment
+
+Defines the following attributes;
+
+=over 3
+
+=item C<command>
+
+=item C<directory>
+
+=item C<job_id>
+
+=item C<port>
+
+=item C<protocol>
+
+=item C<runid>
+
+=item C<servers>
+
+=item C<token>
+
+=item C<uri_format>
+
+=back
 
 =head1 Subroutines/Methods
 
