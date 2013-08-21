@@ -4,7 +4,7 @@ App::MCP::Worker - Remotely executed worker process
 
 # Version
 
-This documents version v0.1.$Rev: 6 $
+This documents version v0.2.$Rev: 1 $
 
 # Synopsis
 
