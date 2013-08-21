@@ -1,6 +1,8 @@
 Revision history for App::MCP::Worker
 
-0.1.5     2013-08-22 00:04:14
+          - Switched to using Dist::Zilla
+
+0.1.6     2013-08-22 00:21:16
           - Converted from SVN to Git
           - Created
 

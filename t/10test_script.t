@@ -1,20 +1,21 @@
-# @(#)$Ident: test_script.t 2013-04-30 23:21 pjf ;
+# @(#)$Ident: 10test_script.t 2013-08-21 23:18 pjf ;
 
 use strict;
 use warnings;
-use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 3 $ =~ /\d+/gmx );
-use File::Spec::Functions;
-use FindBin qw( $Bin );
-use lib catdir( $Bin, updir, q(lib) );
+use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 6 $ =~ /\d+/gmx );
+use File::Spec::Functions   qw( catdir updir );
+use FindBin                 qw( $Bin );
+use lib                 catdir( $Bin, updir, 'lib' );
 
 use Module::Build;
 use Test::More;
 
-BEGIN {
-   my $current = eval { Module::Build->current };
+my $notes = {}; my $perl_ver;
 
-   $current and $current->notes->{stop_tests}
-            and plan skip_all => $current->notes->{stop_tests};
+BEGIN {
+   my $builder = eval { Module::Build->current };
+      $builder and $notes = $builder->notes;
+      $perl_ver = $notes->{min_perl_version} || 5.008;
 }
 
 use_ok 'App::MCP::Worker';

@@ -1,10 +1,10 @@
 # Name
 
-App::MCP::Worker - <One-line description of module's purpose>
+App::MCP::Worker - Remotely executed worker process
 
 # Version
 
-This documents version v0.1.$Rev: 4 $
+This documents version v0.1.$Rev: 6 $
 
 # Synopsis
 

@@ -1,10 +1,10 @@
-# @(#)$Ident: Worker.pm 2013-08-07 00:42 pjf ;
+# @(#)$Ident: Worker.pm 2013-08-21 23:12 pjf ;
 
 package App::MCP::Worker;
 
 use 5.010001;
 use namespace::sweep;
-use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 5 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 6 $ =~ /\d+/gmx );
 
 use Class::Usul::Constants;
 use Class::Usul::Crypt      qw( encrypt );
@@ -113,11 +113,11 @@ __END__
 
 =head1 Name
 
-App::MCP::Worker - <One-line description of module's purpose>
+App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.1.$Rev: 5 $
+This documents version v0.1.$Rev: 6 $
 
 =head1 Synopsis
 

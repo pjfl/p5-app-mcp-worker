@@ -22,4 +22,4 @@ README
 README.pod
 t/ipc_srlock*
 *.tar.gz
-[% distname %]-*
+App-MCP-Worker-*
