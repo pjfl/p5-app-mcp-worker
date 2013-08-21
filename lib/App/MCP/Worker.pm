@@ -4,7 +4,7 @@ package App::MCP::Worker;
 
 use 5.010001;
 use namespace::sweep;
-use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 6 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 1 $ =~ /\d+/gmx );
 
 use Class::Usul::Constants;
 use Class::Usul::Crypt      qw( encrypt );
@@ -117,7 +117,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.1.$Rev: 6 $
+This documents version v0.2.$Rev: 1 $
 
 =head1 Synopsis
 
