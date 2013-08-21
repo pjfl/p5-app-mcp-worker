@@ -1,10 +1,10 @@
-# @(#)$Ident: Worker.pm 2013-06-24 16:15 pjf ;
+# @(#)$Ident: Worker.pm 2013-08-07 00:42 pjf ;
 
 package App::MCP::Worker;
 
-use 5.01;
+use 5.010001;
 use namespace::sweep;
-use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 4 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 5 $ =~ /\d+/gmx );
 
 use Class::Usul::Constants;
 use Class::Usul::Crypt      qw( encrypt );
@@ -117,7 +117,7 @@ App::MCP::Worker - <One-line description of module's purpose>
 
 =head1 Version
 
-This documents version v0.1.$Rev: 4 $
+This documents version v0.1.$Rev: 5 $
 
 =head1 Synopsis
 
