@@ -1,5 +1,7 @@
 Revision history for App::MCP::Worker
 
+          - Added job creation
+
 0.2.1     2013-08-22 00:22:47
           - Switched to using Dist::Zilla
 

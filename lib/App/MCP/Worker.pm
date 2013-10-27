@@ -1,54 +1,95 @@
-# @(#)$Ident: Worker.pm 2013-08-21 23:12 pjf ;
+# @(#)$Ident: Worker.pm 2013-10-27 23:28 pjf ;
 
 package App::MCP::Worker;
 
 use 5.010001;
 use namespace::sweep;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 1 $ =~ /\d+/gmx );
+use version;    our $VERSION = qv( sprintf '0.2.%d', q$Rev: 2 $ =~ /\d+/gmx );
 
 use Class::Usul::Constants;
-use Class::Usul::Crypt      qw( encrypt );
-use Class::Usul::Functions  qw( pad throw );
-use Cwd                     qw( getcwd );
-use English                 qw( -no_match_vars );
-use File::DataClass::Types  qw( ArrayRef Directory NonEmptySimpleStr
-                                NonZeroPositiveInt SimpleStr Str );
-use HTTP::Request::Common   qw( POST );
+use Class::Usul::Crypt         qw( decrypt encrypt );
+use Class::Usul::Functions     qw( base64_decode_ns bson64id
+                                   exception pad throw );
+use Crypt::Eksblowfish::Bcrypt qw( bcrypt en_base64 );
+use Cwd                        qw( getcwd );
+use English                    qw( -no_match_vars );
+use File::DataClass::Types     qw( ArrayRef Directory HashRef NonEmptySimpleStr
+                                   NonZeroPositiveInt SimpleStr Str );
+use HTTP::Request::Common      qw( POST );
 use LWP::UserAgent;
 use Moo;
 use MooX::Options;
-use Storable                qw( nfreeze );
+use Storable                   qw( nfreeze thaw );
 use TryCatch;
-use Type::Utils             qw( as coerce from subtype via );
+use Type::Utils                qw( as coerce from subtype via );
 
 extends q(Class::Usul::Programs);
 with    q(Class::Usul::TraitFor::UntaintedGetopts);
+with    q(App::MCP::Worker::ClientAuth);
 
 my $ServerList = subtype as ArrayRef;
 
 coerce $ServerList, from Str, via { [ split SPC, $_ ] };
 
-option 'command'    => is => 'ro', isa => NonEmptySimpleStr,  required => TRUE;
+option 'job'       => is => 'ro', isa => HashRef,
+   documentation   => 'Keys and values of a job definition in JSON format',
+   default         => sub { {} }, json => TRUE, short => 'j';
 
-option 'directory'  => is => 'ro', isa => Directory | SimpleStr;
+option 'port'      => is => 'ro', isa => NonZeroPositiveInt, default => 2012,
+   documentation   => 'Port number for the remote servers. Defaults to 2012',
+   format          => 'i', short => 'p';
 
-option 'port'       => is => 'ro', isa => NonZeroPositiveInt, default => 2012;
+option 'protocol'  => is => 'ro', isa => NonEmptySimpleStr, default => 'http',
+   documentation   => 'Which network protocol to use. Defaults to http',
+   format          => 's', short => 'P';
 
-option 'protocol'   => is => 'ro', isa => NonEmptySimpleStr,  default => 'http';
+option 'servers'   => is => 'ro', isa => $ServerList, default => 'localhost',
+   documentation   => 'List of servers to send request to',
+   coerce          => $ServerList->coercion, format => 's', short => 's';
 
-option 'job_id'     => is => 'ro', isa => NonZeroPositiveInt, required => TRUE;
+option 'user_name' => is => 'ro', isa => NonEmptySimpleStr,
+   documentation   => 'Name in the user table and .mcprc file',
+   default         => 'unknown', format => 's', short => 'u';
 
-option 'runid'      => is => 'ro', isa => NonEmptySimpleStr,  required => TRUE;
+has 'command'      => is => 'ro', isa => NonEmptySimpleStr, default => 'true';
 
-option 'servers'    => is => 'ro', isa => $ServerList,        required => TRUE,
-   coerce           => $ServerList->coercion;
+has 'directory'    => is => 'ro', isa => Directory | SimpleStr;
 
-option 'token'      => is => 'ro', isa => SimpleStr;
+has 'job_id'       => is => 'ro', isa => NonZeroPositiveInt, default => $PID;
 
-option 'uri_format' => is => 'ro', isa => NonEmptySimpleStr,
-   default          => 'api/event?runid=%s';
+has 'runid'        => is => 'ro', isa => NonEmptySimpleStr, default => bson64id;
+
+has 'token'        => is => 'ro', isa => SimpleStr;
+
+has 'ev_uri_fmt'   => is => 'ro', isa => NonEmptySimpleStr,
+   default         => 'api/event/%s';
+
+has 'job_uri_fmt'  => is => 'ro', isa => NonEmptySimpleStr,
+   default         => 'api/job/%s';
+
+has 'sess_uri_fmt' => is => 'ro', isa => NonEmptySimpleStr,
+   default         => 'api/session/%s';
 
 # Public methods
+sub create_job : method {
+   my $self    = shift;
+   my $ua      = LWP::UserAgent->new;
+   my $sess    = $self->_get_authenticated_session( $ua ) or return FAILED;
+   my $sess_id = $sess->{id};
+   my $job     = encrypt $sess->{token}, nfreeze $self->job;
+   my $uri     = $self->protocol.'://'.$self->servers->[ 0 ].':'.$self->port;
+      $uri    .= '/'.sprintf $self->job_uri_fmt, $sess_id;
+   my $res     = $ua->request( POST $uri, [ job => $job ] );
+   my $prefix  = " JOB[${sess_id}]: ";
+
+   unless ($res->is_success) {
+      $self->error( $prefix.$res->message ); return FAILED;
+   }
+
+   $self->debug and $self->log->debug( $prefix.$res->message );
+   return OK;
+}
+
 sub dispatch {
    my $self = shift;
 
@@ -57,7 +98,41 @@ sub dispatch {
    return $r->out;
 }
 
+sub set_client_password : method {
+   $_[ 0 ]->set_user_password( @{ $_[ 0 ]->extra_argv } ); return OK;
+}
+
 # Private methods
+sub _get_authenticated_session {
+   my ($self, $ua, $opts) = @_; $opts //= {};
+
+   my $user_name = $opts->{user_name} || $self->user_name;
+   my $uri       = $self->protocol.'://'.$self->servers->[ 0 ].':'.$self->port
+                   .'/'.sprintf $self->sess_uri_fmt, $user_name;
+   my $res       = $ua->request( POST $uri, [] );
+
+   unless ($res->is_success) {
+      $self->error( $res->code == 404 ? $res->content : $res->message );
+      return FALSE;
+   }
+
+   my $password  = $opts->{password} || $self->get_user_password( $user_name );
+   my $content   = thaw base64_decode_ns $res->content;
+   my $key       = bcrypt( $password, $content->{salt} );
+   my $session;
+
+   try        { $session = thaw decrypt $key, $content->{token} }
+   catch ($e) {
+      $self->error( exception error => 'User [_1] authentication failure',
+                              args  => [ $user_name ] );
+      return FALSE;
+   }
+
+   $self->debug and $self->log->debug
+      ( "User ${user_name} Session Id ".$session->{id}.' Code '.$res->code );
+   return $session;
+}
+
 sub _run_command {
    my $self = shift; my $r; $self->_send_event( 'started' );
 
@@ -74,22 +149,25 @@ sub _run_command {
 sub _send_event {
    my ($self, $transition, $r) = @_;
 
-   my $runid  = $self->runid;
-   my $ua     = LWP::UserAgent->new;
-   my $event  = { job_id => $self->job_id, pid        => $PID,
-                  runid  => $runid,        transition => $transition, };
-   my $prefix = (pad uc $transition, 9, SPC, 'left')."[${runid}]: ";
+   my $runid   = $self->runid;
+   my $ua      = LWP::UserAgent->new;
+   my $event   = { job_id => $self->job_id, pid        => $PID,
+                   runid  => $runid,        transition => $transition, };
+   my $prefix  = (pad uc $transition, 9, SPC, 'left')."[${runid}]: ";
+   my $message = $prefix.($r ? 'Rv '.$r->rv : "Pid ${PID}");
 
-   $self->log->debug( $prefix.($r ? 'Rv '.$r->rv : "Pid ${PID}") );
-   $r and $event->{rv} = $r->rv; $event = nfreeze $event;
-   $self->token and $event = encrypt $self->token, $event;
+   $r and $event->{rv} = $r->rv;
+   $self->debug and $self->log->debug( $message );
+   $event = encrypt $self->token, nfreeze $event;
 
    for my $server (@{ $self->servers }) {
       my $uri  = $self->protocol."://${server}:".$self->port.'/';
-         $uri .= sprintf $self->uri_format, $self->runid;
+         $uri .= sprintf $self->ev_uri_fmt, $self->runid;
       my $res  = $ua->request( POST $uri, [ event => $event ] );
 
-      if ($res->is_success) { $self->log->debug( "${prefix}Code ".$res->code ) }
+      if ($res->is_success) {
+         $self->debug and $self->log->debug( "${prefix}Code ".$res->code );
+      }
       else { $self->log->error( $prefix.$res->message ) }
    }
 
@@ -117,7 +195,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 1 $
+This documents version v0.2.$Rev: 2 $
 
 =head1 Synopsis
 
@@ -154,6 +232,8 @@ Defines the following attributes;
 
 =head1 Subroutines/Methods
 
+=head2 create_job - Creates a new job on an MCP job scheduler
+
 =head1 Diagnostics
 
 =head1 Dependencies
@@ -184,7 +264,7 @@ Peter Flanigan, C<< <Support at RoxSoft dot co dot uk> >>
 
 =head1 License and Copyright
 
-Copyright (c) 2012 Peter Flanigan. All rights reserved
+Copyright (c) 2013 Peter Flanigan. All rights reserved
 
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself. See L<perlartistic>
