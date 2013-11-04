@@ -1,5 +1,6 @@
 Revision history for App::MCP::Worker
 
+          - Added host authentication
           - Added user authentication
           - Serialize with JSON not Storable
           - Added job creation

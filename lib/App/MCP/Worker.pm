@@ -1,16 +1,19 @@
-# @(#)$Ident: Worker.pm 2013-10-31 23:06 pjf ;
+# @(#)$Ident: Worker.pm 2013-11-04 18:18 pjf ;
 
 package App::MCP::Worker;
 
 use 5.010001;
 use namespace::sweep;
-use version;    our $VERSION = qv( sprintf '0.2.%d', q$Rev: 3 $ =~ /\d+/gmx );
+use version;    our $VERSION = qv( sprintf '0.2.%d', q$Rev: 4 $ =~ /\d+/gmx );
 
+use Authen::HTTP::Signature;
 use Class::Usul::Constants;
 use Class::Usul::Crypt         qw( decrypt encrypt );
-use Class::Usul::Functions     qw( bson64id exception pad throw );
+use Class::Usul::Functions     qw( bson64id class2appdir exception pad throw );
+use Convert::SSH2;
 use Crypt::Eksblowfish::Bcrypt qw( bcrypt );
 use Cwd                        qw( getcwd );
+use Digest                     qw( );
 use English                    qw( -no_match_vars );
 use File::DataClass::Types     qw( ArrayRef Directory HashRef NonEmptySimpleStr
                                    NonZeroPositiveInt Object SimpleStr Str );
@@ -19,6 +22,7 @@ use LWP::UserAgent;
 use Moo;
 use MooX::Options;
 use JSON                       qw( );
+use Sys::Hostname;
 use TryCatch;
 use Type::Utils                qw( as coerce from subtype via );
 
@@ -82,11 +86,11 @@ sub create_job : method {
    my $json    = $self->transcoder;
    my $server  = $self->servers->[ 0 ];
    my $uri     = $self->protocol."://${server}:".$self->port.'/';
-   my $sess    = $self->_get_authenticated_session( $uri ) or return FAILED;
+   my $sess    = $self->_authenticate_session( $uri ) or return FAILED;
    my $sess_id = $sess->{id};
       $uri    .= sprintf $self->job_uri_fmt, $sess_id;
    my $job     = encrypt $sess->{token}, $json->encode( $self->job );
-   my $res     = $self->_post_as_json( $uri, { job => $job } );
+   my $res     = $self->_post_as_json( $uri, { job => $job } ) or return FAILED;
    my $content = $json->decode( $res->content );
    my $message = " JOB[${sess_id}]: ".$res->code.SPC.$content->{message};
 
@@ -109,13 +113,13 @@ sub set_client_password : method {
 }
 
 # Private methods
-sub _get_authenticated_session {
+sub _authenticate_session {
    my ($self, $uri, $opts) = @_; $opts //= {};
 
    my $json      = $self->transcoder;
    my $user_name = $opts->{user_name} || $self->user_name;
       $uri      .= sprintf $self->sess_uri_fmt, $user_name;
-   my $res       = $self->_post_as_json( $uri, {} );
+   my $res       = $self->_post_as_json( $uri, {} ) or return FALSE;
    my $content   = $json->decode( $res->content );
 
    unless ($res->is_success) {
@@ -135,16 +139,35 @@ sub _get_authenticated_session {
       return FALSE;
    }
 
-   $self->debug and $self->log->debug
+   $self->log->debug
       ( $res->code." User ${user_name} Session-Id ".$session->{id} );
    return $session;
 }
 
 sub _post_as_json {
-   my ($self, $uri, $content) = @_; my $ua = $self->user_agent;
+   my ($self, $uri, $content) = @_; my $ua = $self->user_agent; my $res;
 
-   return $ua->request( POST $uri, 'Content-Type' => 'application/json',
-                        content => $self->transcoder->encode( $content ) );
+   $content = $self->transcoder->encode( $content );
+
+   my $config   = $self->config;
+   my $digest   = Digest->new( 'SHA-1' ); $digest->add( $content );
+   my $req      = POST $uri, 'Content-SHA1' => $digest->hexdigest,
+                             'Content-Type' => 'application/json',
+                             'Content'      => $content;
+   my $ssh_dir  = $config->my_home->catdir( '.ssh' );
+   my $prefix   = class2appdir $config->appclass;
+   my $key_file = $ssh_dir->catfile( "${prefix}.priv" );
+
+   try {
+      my $key    = $key_file->all;
+      my $signer = Authen::HTTP::Signature->new
+         ( headers => [ 'Content-SHA1' ], key => $key, key_id => hostname, );
+
+      $res = $ua->request( $signer->sign( $req ) );
+   }
+   catch ($e) { $self->log->error( $e ); return }
+
+   return $res;
 }
 
 sub _run_command {
@@ -158,31 +181,30 @@ sub _run_command {
 
    $self->_send_event( 'finish', $r );
    return;
-};
+}
 
 sub _send_event {
    my ($self, $transition, $r) = @_;
 
-   my $runid   = $self->runid;
-   my $json    = $self->transcoder;
-   my $event   = { job_id => $self->job_id, pid        => $PID,
-                   runid  => $runid,        transition => $transition, };
-   my $prefix  = (pad uc $transition, 9, SPC, 'left')."[${runid}]: ";
-   my $message = $prefix.($r ? 'Rv '.$r->rv : "Pid ${PID}");
+   my $runid  = $self->runid;
+   my $json   = $self->transcoder;
+   my $event  = { job_id => $self->job_id, pid        => $PID,
+                  runid  => $runid,        transition => $transition, };
+   my $prefix = (pad uc $transition, 9, SPC, 'left')."[${runid}]: ";
 
+   $self->log->debug( $prefix.($r ? 'Rv '.$r->rv : "Pid ${PID}") );
    $r and $event->{rv} = $r->rv;
-   $self->debug and $self->log->debug( $message );
    $event = encrypt $self->token, $json->encode( $event );
 
    for my $server (@{ $self->servers }) {
-      my $uri     = $self->protocol."://${server}:".$self->port.'/';
-         $uri    .= sprintf $self->ev_uri_fmt, $runid;
-      my $res     = $self->_post_as_json( $uri, { event => $event } );
+      my $uri     = $self->protocol."://${server}:".$self->port.'/'
+                    .sprintf $self->ev_uri_fmt, $runid;
+      my $res     = $self->_post_as_json( $uri, { event => $event } ) or next;
       my $content = $json->decode( $res->content );
       my $message = $prefix.$res->code.SPC.$content->{message};
 
-      unless ($res->is_success) { $self->log->error( $message ) }
-      else { $self->debug and $self->log->debug( $message ) }
+      if ($res->is_success) { $self->log->debug( $message ) }
+      else { $self->log->error( $message ) }
    }
 
    return;
@@ -209,7 +231,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 3 $
+This documents version v0.2.$Rev: 4 $
 
 =head1 Synopsis
 
