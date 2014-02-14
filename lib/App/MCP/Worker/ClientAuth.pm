@@ -1,15 +1,13 @@
-# @(#)Ident: ClientAuth.pm 2013-10-27 23:19 pjf ;
-
 package App::MCP::Worker::ClientAuth;
 
 use namespace::sweep;
-use version;  our $VERSION = qv( sprintf '0.2.%d', q$Rev: 2 $ =~ /\d+/gmx );
 
 use Class::Usul::Constants;
 use Class::Usul::Crypt::Util qw( decrypt_from_config encrypt_for_config
                                  is_encrypted );
 use Class::Usul::Functions   qw( throw );
 use File::DataClass::Types   qw( Path );
+use Unexpected::Functions    qw( Unspecified );
 use Moo::Role;
 
 requires qw( config file get_line loc );
@@ -18,28 +16,6 @@ has 'rc_file' => is => 'lazy', isa => Path, coerce => Path->coercion,
    builder    => sub { $_[ 0 ]->config->my_home->catfile( '.mcprc.json' ) };
 
 # Public methods
-sub set_user_password {
-   my ($self, $user_name, $password) = @_;
-
-   $user_name or throw $self->loc( 'No user name' ); my $v;
-
-   unless ($password) {
-      $password = $self->get_line
-         ( '+Enter password', NUL, TRUE, undef, FALSE, TRUE );
-
-      my $again = $self->get_line( '+Again', NUL, TRUE, undef, FALSE, TRUE );
-
-      $password eq $again or throw $self->loc( 'Passwords do not match' );
-   }
-
-   $password or throw $self->loc( 'No password' );
-
-   my $data = $self->_read_rc_file; $data->{users}->{ $user_name } = $password;
-
-   $self->_write_rc_file( $data );
-   return;
-}
-
 sub get_user_password {
    my ($self, $user_name) = @_;
 
@@ -47,6 +23,28 @@ sub get_user_password {
          || $self->get_line( '+Enter password', NUL, TRUE, undef, FALSE, TRUE );
 
    return $password;
+}
+
+sub set_user_password {
+   my ($self, $user_name, $password) = @_;
+
+   $user_name or throw class => Unspecified, args => [ 'user name' ];
+
+   unless ($password) {
+      $password = $self->get_line
+         ( '+Enter password', NUL, TRUE, undef, FALSE, TRUE );
+
+      my $again = $self->get_line( '+Again', NUL, TRUE, undef, FALSE, TRUE );
+
+      $password eq $again or throw 'Passwords do not match';
+   }
+
+   $password or throw class => Unspecified, args => [ 'password' ];
+
+   my $data = $self->_read_rc_file; $data->{users}->{ $user_name } = $password;
+
+   $self->_write_rc_file( $data );
+   return;
 }
 
 # Private methods
@@ -91,10 +89,6 @@ App::MCP::Worker::ClientAuth - One-line description of the modules purpose
 
    use App::MCP::Worker::ClientAuth;
    # Brief but working code examples
-
-=head1 Version
-
-This documents version v0.2.$Rev: 2 $ of L<App::MCP::Worker::ClientAuth>
 
 =head1 Description
 

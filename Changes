@@ -1,5 +1,6 @@
 Revision history for App::MCP::Worker
 
+          - Now with DH key exchange
           - Added host authentication
           - Added user authentication
           - Serialize with JSON not Storable

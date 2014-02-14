@@ -1,39 +1,52 @@
-# @(#)$Ident: Worker.pm 2013-11-04 18:18 pjf ;
-
 package App::MCP::Worker;
 
 use 5.010001;
 use namespace::sweep;
-use version;    our $VERSION = qv( sprintf '0.2.%d', q$Rev: 4 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 5 $ =~ /\d+/gmx );
 
+use Moo;
 use Authen::HTTP::Signature;
 use Class::Usul::Constants;
 use Class::Usul::Crypt         qw( decrypt encrypt );
+use Class::Usul::Crypt::Util   qw( dh_base dh_mod );
 use Class::Usul::Functions     qw( bson64id class2appdir exception pad throw );
+use Class::Usul::Options;
 use Convert::SSH2;
-use Crypt::Eksblowfish::Bcrypt qw( bcrypt );
+use Crypt::DH;
 use Cwd                        qw( getcwd );
+use Data::Record;
 use Digest                     qw( );
+use Crypt::Eksblowfish::Bcrypt qw( bcrypt );
 use English                    qw( -no_match_vars );
-use File::DataClass::Types     qw( ArrayRef Directory HashRef NonEmptySimpleStr
-                                   NonZeroPositiveInt Object SimpleStr Str );
+use File::DataClass::Types     qw( ArrayRef Directory HashRef LoadableClass
+                                   NonEmptySimpleStr NonZeroPositiveInt
+                                   Object SimpleStr Str );
+use HTTP::Status               qw( HTTP_EXPECTATION_FAILED HTTP_UNAUTHORIZED );
 use HTTP::Request::Common      qw( POST );
 use LWP::UserAgent;
-use Moo;
-use MooX::Options;
 use JSON                       qw( );
+use Regexp::Common;
 use Sys::Hostname;
 use TryCatch;
 use Type::Utils                qw( as coerce from subtype via );
+use Unexpected::Functions      qw( Unspecified );
 
 extends q(Class::Usul::Programs);
-with    q(Class::Usul::TraitFor::UntaintedGetopts);
 with    q(App::MCP::Worker::ClientAuth);
+
+my $ShellCmd = subtype as ArrayRef;
+
+coerce $ShellCmd, from Str, via {
+   my $split_on_space = { split => SPC, unless => $RE{quoted} };
+
+   return [ Data::Record->new( $split_on_space )->records( $_ ) ];
+};
 
 my $ServerList = subtype as ArrayRef;
 
-coerce $ServerList, from Str, via { [ split SPC, $_ ] };
+coerce $ServerList, from Str, via { [ split m{ [,] }mx, $_ ] };
 
+# Public attributes
 option 'job'       => is => 'ro',   isa => HashRef,
    documentation   => 'Keys and values of a job definition in JSON format',
    default         => sub { {} }, json => TRUE, short => 'j';
@@ -54,7 +67,8 @@ option 'user_name' => is => 'ro',   isa => NonEmptySimpleStr,
    documentation   => 'Name in the user table and .mcprc file',
    default         => 'unknown', format => 's', short => 'u';
 
-has 'command'      => is => 'ro',   isa => NonEmptySimpleStr, default => 'true';
+has 'command'      => is => 'lazy', isa => $ShellCmd, default => 'true',
+   coerce          => $ShellCmd->coercion;
 
 has 'directory'    => is => 'ro',   isa => Directory | SimpleStr;
 
@@ -65,15 +79,12 @@ has 'runid'        => is => 'ro',   isa => NonEmptySimpleStr,
 
 has 'token'        => is => 'ro',   isa => SimpleStr;
 
-has 'ev_uri_fmt'   => is => 'ro',   isa => NonEmptySimpleStr,
-   default         => 'api/event/%s';
+has 'uri_template' => is => 'ro',   isa => HashRef, default => sub { {
+   authenticate    => '/api/authenticate/%s',
+   event           => '/api/event/%s',
+   job             => '/api/job/%s', } };
 
-has 'job_uri_fmt'  => is => 'ro',   isa => NonEmptySimpleStr,
-   default         => 'api/job/%s';
-
-has 'sess_uri_fmt' => is => 'ro',   isa => NonEmptySimpleStr,
-   default         => 'api/session/%s';
-
+# Private attributes
 has '_transcoder'  => is => 'lazy', isa => Object,
    builder         => sub { JSON->new }, reader => 'transcoder';
 
@@ -85,18 +96,19 @@ sub create_job : method {
    my $self    = shift;
    my $json    = $self->transcoder;
    my $server  = $self->servers->[ 0 ];
-   my $uri     = $self->protocol."://${server}:".$self->port.'/';
-   my $sess    = $self->_authenticate_session( $uri ) or return FAILED;
+   my $uri     = $self->protocol."://${server}:".$self->port;
+   my $sess    = $self->_authenticate_session( $uri );
    my $sess_id = $sess->{id};
-      $uri    .= sprintf $self->job_uri_fmt, $sess_id;
+      $uri    .= sprintf $self->uri_template->{job}, $sess_id;
    my $job     = encrypt $sess->{token}, $json->encode( $self->job );
-   my $res     = $self->_post_as_json( $uri, { job => $job } ) or return FAILED;
-   my $content = $json->decode( $res->content );
-   my $message = " JOB[${sess_id}]: ".$res->code.SPC.$content->{message};
+   my $res     = $self->_post_as_json( $uri, { job => $job } );
+   my $message = $json->decode( $res->content )->{message};
 
-   unless ($res->is_success) { $self->error( $message ); return FAILED }
+   $res->is_success
+      or throw error => 'Session [_1] create job failed code [_2]: [_3]',
+               args  => [ $sess_id, $res->code, $message ];
 
-   $self->info( $message );
+   $self->info( "SESS[${sess_id}]: ${message}" );
    return OK;
 }
 
@@ -116,58 +128,86 @@ sub set_client_password : method {
 sub _authenticate_session {
    my ($self, $uri, $opts) = @_; $opts //= {};
 
-   my $json      = $self->transcoder;
    my $user_name = $opts->{user_name} || $self->user_name;
-      $uri      .= sprintf $self->sess_uri_fmt, $user_name;
-   my $res       = $self->_post_as_json( $uri, {} ) or return FALSE;
-   my $content   = $json->decode( $res->content );
+   my $password  = $opts->{password } || $self->get_user_password( $user_name );
+   my $dh        = Crypt::DH->new( g => dh_base, p => dh_mod );
+   my $template  = $self->uri_template->{authenticate};
 
-   unless ($res->is_success) {
-      $self->error( $res->code == 404 ? $content->{message} : $res->message );
-      return FALSE;
-   }
+   $dh->generate_keys; $uri .= sprintf $template, $user_name;
 
-   my $password  = $opts->{password} || $self->get_user_password( $user_name );
-   my $key       = bcrypt( $password, $content->{salt} );
-   my $session;
+   my $pub_key   = NUL.$dh->pub_key;
+   my $res       = $self->_post_as_json( $uri, { public_key => $pub_key } );
+   my $priv_key  = $self->_decode_priv_key( $dh, $user_name, $password, $res );
+   my $token     = encrypt $priv_key, $password;
 
-   try        { $session = $json->decode( decrypt $key, $content->{token} ) }
+   $res = $self->_post_as_json( $uri, { authenticate => $token } );
+
+   return $self->_decode_session( $priv_key, $user_name, $res );
+}
+
+sub _decode_priv_key {
+   my ($self, $dh, $user_name, $password, $res) = @_;
+
+   my $content = $self->transcoder->decode( $res->content );
+
+   $res->is_success
+      or throw error => 'User [_1] authentication failure code [_2]: [_3]',
+               args  => [ $user_name, $res->code, $content->{message} ];
+
+   my $hash_val = bcrypt( $password, $content->{salt} );
+   my $pub_key  = decrypt $hash_val, $content->{public_key};
+
+   return $dh->compute_secret( $pub_key );
+}
+
+sub _decode_session {
+   my ($self, $priv_key, $user_name, $res) = @_;
+
+   my $json = $self->transcoder; my $content = $json->decode( $res->content );
+
+   $res->is_success
+      or throw error => 'User [_1] authentication failure code [_2]: [_3]',
+               args  => [ $user_name, $res->code, $content->{message} ];
+
+   my $session; my $token = $content->{token};
+
+   try        { $session = $json->decode( decrypt $priv_key, $token ) }
    catch ($e) {
-      my $message = 'User [_1] authentication failure';
-
-      $self->error( exception error => $message, args  => [ $user_name ] );
-      return FALSE;
+      $self->log->debug( $e );
+      throw error => 'User [_1] authentication failure: Incorrect shared key',
+            args  => [ $user_name ];
    }
 
-   $self->log->debug
-      ( $res->code." User ${user_name} Session-Id ".$session->{id} );
+   $self->log->debug( "User ${user_name} Session-Id ".$session->{id} );
+
    return $session;
 }
 
 sub _post_as_json {
-   my ($self, $uri, $content) = @_; my $ua = $self->user_agent; my $res;
+   my ($self, $uri, $content) = @_; my $key = $self->_read_private_key;
 
    $content = $self->transcoder->encode( $content );
 
-   my $config   = $self->config;
-   my $digest   = Digest->new( 'SHA-1' ); $digest->add( $content );
-   my $req      = POST $uri, 'Content-SHA1' => $digest->hexdigest,
-                             'Content-Type' => 'application/json',
-                             'Content'      => $content;
-   my $ssh_dir  = $config->my_home->catdir( '.ssh' );
-   my $prefix   = class2appdir $config->appclass;
-   my $key_file = $ssh_dir->catfile( "${prefix}.priv" );
+   my $digest = Digest->new( 'SHA-512' ); $digest->add( $content );
+   my $req    = POST $uri, 'Content-SHA512' => $digest->hexdigest,
+                           'Content-Type'   => 'application/json',
+                           'Content'        => $content;
+   # TODO: Why doest hmac-sha512 not work?
+   my $signer = Authen::HTTP::Signature->new
+      ( headers => [ 'Content-SHA512' ], key => $key, key_id => hostname, );
 
-   try {
-      my $key    = $key_file->all;
-      my $signer = Authen::HTTP::Signature->new
-         ( headers => [ 'Content-SHA1' ], key => $key, key_id => hostname, );
+   return $self->user_agent->request( $signer->sign( $req ) );
+}
 
-      $res = $ua->request( $signer->sign( $req ) );
-   }
-   catch ($e) { $self->log->error( $e ); return }
+sub _read_private_key {
+   my ($self, $key_id) = @_; state $cache //= {};
 
-   return $res;
+   $key_id //= class2appdir $self->config->appclass;
+
+   my $key     = $cache->{ $key_id }; $key and return $key;
+   my $ssh_dir = $self->config->my_home->catdir( '.ssh' );
+
+   return $cache->{ $key_id } = $ssh_dir->catfile( "${key_id}.priv" )->all;
 }
 
 sub _run_command {
@@ -175,7 +215,7 @@ sub _run_command {
 
    try {
       $self->directory and __chdir( $self->directory );
-      $r = $self->run_cmd( [ split SPC, $self->command ] );
+      $r = $self->run_cmd( $self->command );
    }
    catch ($e) { $self->_send_event( 'terminate' ); return }
 
@@ -191,20 +231,25 @@ sub _send_event {
    my $event  = { job_id => $self->job_id, pid        => $PID,
                   runid  => $runid,        transition => $transition, };
    my $prefix = (pad uc $transition, 9, SPC, 'left')."[${runid}]: ";
+   my $format = $self->protocol."://%s:".$self->port
+                .sprintf $self->uri_template->{event}, $runid;
 
-   $self->log->debug( $prefix.($r ? 'Rv '.$r->rv : "Pid ${PID}") );
    $r and $event->{rv} = $r->rv;
+   $self->log->debug( $prefix.($r ? 'Rv '.$r->rv : "Pid ${PID}") );
    $event = encrypt $self->token, $json->encode( $event );
 
    for my $server (@{ $self->servers }) {
-      my $uri     = $self->protocol."://${server}:".$self->port.'/'
-                    .sprintf $self->ev_uri_fmt, $runid;
-      my $res     = $self->_post_as_json( $uri, { event => $event } ) or next;
-      my $content = $json->decode( $res->content );
-      my $message = $prefix.$res->code.SPC.$content->{message};
+      try {
+         my $uri     = sprintf $format, $server;
+         my $res     = $self->_post_as_json( $uri, { event => $event } );
+         my $message = $json->decode( $res->content )->{message};
 
-      if ($res->is_success) { $self->log->debug( $message ) }
-      else { $self->log->error( $message ) }
+         $res->is_success
+            or throw error => 'Run [_1] send event failed code [_2]: [_3]',
+                     args  => [ $runid, $res->code, $message ];
+         $self->log->debug( $prefix.$message );
+      }
+      catch ($e) { $self->log->error( $e ) }
    }
 
    return;
@@ -212,8 +257,9 @@ sub _send_event {
 
 # Private functions
 sub __chdir {
-   my $dir = shift; $dir or throw 'Directory not specified in chdir';
+   my $dir = shift;
 
+         $dir or throw class => Unspecified, args => [ 'directory' ];
    chdir $dir or throw error => 'Directory [_1] cannot chdir: [_2]',
                         args => [ $dir, $OS_ERROR ];
    return $dir;
@@ -231,7 +277,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 4 $
+This documents version v0.2.$Rev: 5 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 
@@ -262,7 +308,7 @@ Defines the following attributes;
 
 =item C<token>
 
-=item C<uri_format>
+=item C<uri_template>
 
 =back
 
