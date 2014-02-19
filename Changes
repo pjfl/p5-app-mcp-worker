@@ -1,5 +1,6 @@
 Revision history for App::MCP::Worker
 
+          - Replaced DH key exchange with SRP::Blowfish
           - Now with DH key exchange
           - Added host authentication
           - Added user authentication

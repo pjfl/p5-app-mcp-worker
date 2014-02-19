@@ -2,27 +2,25 @@ package App::MCP::Worker;
 
 use 5.010001;
 use namespace::sweep;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 5 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 6 $ =~ /\d+/gmx );
 
 use Moo;
+use App::MCP::Worker::Crypt::SRP::Blowfish;
 use Authen::HTTP::Signature;
 use Class::Usul::Constants;
-use Class::Usul::Crypt         qw( decrypt encrypt );
-use Class::Usul::Crypt::Util   qw( dh_base dh_mod );
+use Class::Usul::Crypt         qw( encrypt );
 use Class::Usul::Functions     qw( bson64id class2appdir exception pad throw );
 use Class::Usul::Options;
 use Convert::SSH2;
-use Crypt::DH;
 use Cwd                        qw( getcwd );
 use Data::Record;
 use Digest                     qw( );
-use Crypt::Eksblowfish::Bcrypt qw( bcrypt );
 use English                    qw( -no_match_vars );
 use File::DataClass::Types     qw( ArrayRef Directory HashRef LoadableClass
                                    NonEmptySimpleStr NonZeroPositiveInt
                                    Object SimpleStr Str );
 use HTTP::Status               qw( HTTP_EXPECTATION_FAILED HTTP_UNAUTHORIZED );
-use HTTP::Request::Common      qw( POST );
+use HTTP::Request::Common      qw( GET POST );
 use LWP::UserAgent;
 use JSON                       qw( );
 use Regexp::Common;
@@ -81,8 +79,8 @@ has 'token'        => is => 'ro',   isa => SimpleStr;
 
 has 'uri_template' => is => 'ro',   isa => HashRef, default => sub { {
    authenticate    => '/api/authenticate/%s',
-   event           => '/api/event/%s',
-   job             => '/api/job/%s', } };
+   event           => '/api/event?runid=%s',
+   job             => '/api/job?sessionid=%s', } };
 
 # Private attributes
 has '_transcoder'  => is => 'lazy', isa => Object,
@@ -100,7 +98,7 @@ sub create_job : method {
    my $sess    = $self->_authenticate_session( $uri );
    my $sess_id = $sess->{id};
       $uri    .= sprintf $self->uri_template->{job}, $sess_id;
-   my $job     = encrypt $sess->{token}, $json->encode( $self->job );
+   my $job     = encrypt $sess->{shared_secret}, $json->encode( $self->job );
    my $res     = $self->_post_as_json( $uri, { job => $job } );
    my $message = $json->decode( $res->content )->{message};
 
@@ -130,71 +128,71 @@ sub _authenticate_session {
 
    my $user_name = $opts->{user_name} || $self->user_name;
    my $password  = $opts->{password } || $self->get_user_password( $user_name );
-   my $dh        = Crypt::DH->new( g => dh_base, p => dh_mod );
+   my $srp       = App::MCP::Worker::Crypt::SRP::Blowfish->new;
    my $template  = $self->uri_template->{authenticate};
 
-   $dh->generate_keys; $uri .= sprintf $template, $user_name;
+   $uri .= sprintf $template, $user_name;
 
-   my $pub_key   = NUL.$dh->pub_key;
-   my $res       = $self->_post_as_json( $uri, { public_key => $pub_key } );
-   my $priv_key  = $self->_decode_priv_key( $dh, $user_name, $password, $res );
-   my $token     = encrypt $priv_key, $password;
+  (my $pub_key)  = $srp->client_compute_A;
+   my $res       = $self->_get_with_sig( $uri, { public_key => $pub_key } );
+   my $token     = $self->_compute_token( $srp, $user_name, $password, $res );
 
-   $res = $self->_post_as_json( $uri, { authenticate => $token } );
+   $res = $self->_post_as_json( $uri, { M1_token => $token } );
 
-   return $self->_decode_session( $priv_key, $user_name, $res );
+   my $content   = $self->transcoder->decode( $res->content );
+
+   $res->is_success
+      or throw error => 'User [_1] authentication failure code [_2]: [_3]',
+               args  => [ $user_name, $res->code, $content->{message} ];
+   $srp->client_verify_M2( $content->{M2_token} )
+      or throw error => 'User [_1] M2 token verification failure',
+               args  => [ $user_name ];
+   $self->log->debug( "User ${user_name} Session-Id ".$content->{id} );
+
+   return { id => $content->{id}, shared_secret => $srp->get_secret_K };
 }
 
-sub _decode_priv_key {
-   my ($self, $dh, $user_name, $password, $res) = @_;
+sub _compute_token {
+   my ($self, $srp, $user_name, $password, $res) = @_;
 
    my $content = $self->transcoder->decode( $res->content );
 
    $res->is_success
       or throw error => 'User [_1] authentication failure code [_2]: [_3]',
                args  => [ $user_name, $res->code, $content->{message} ];
+   $srp->client_verify_B( $content->{public_key} )
+      or throw error => 'User [_1] server public key verification failure',
+               args  => [ $user_name ];
+   $srp->client_init( $user_name, $password, $content->{salt} );
 
-   my $hash_val = bcrypt( $password, $content->{salt} );
-   my $pub_key  = decrypt $hash_val, $content->{public_key};
-
-   return $dh->compute_secret( $pub_key );
+   return $srp->client_compute_M1;
 }
 
-sub _decode_session {
-   my ($self, $priv_key, $user_name, $res) = @_;
+sub _get_with_sig {
+   my ($self, $uri, $content) = @_; my $key = $self->_read_private_key;
 
-   my $json = $self->transcoder; my $content = $json->decode( $res->content );
+   my $signer = Authen::HTTP::Signature->new
+      ( headers => [ 'request-line' ], key => $key, key_id => hostname, );
+   my $req    = GET "${uri}?public_key=".$content->{public_key};
 
-   $res->is_success
-      or throw error => 'User [_1] authentication failure code [_2]: [_3]',
-               args  => [ $user_name, $res->code, $content->{message} ];
+   $req->protocol( 'HTTP/1.1' );
 
-   my $session; my $token = $content->{token};
-
-   try        { $session = $json->decode( decrypt $priv_key, $token ) }
-   catch ($e) {
-      $self->log->debug( $e );
-      throw error => 'User [_1] authentication failure: Incorrect shared key',
-            args  => [ $user_name ];
-   }
-
-   $self->log->debug( "User ${user_name} Session-Id ".$session->{id} );
-
-   return $session;
+   return $self->user_agent->request( $signer->sign( $req ) );
 }
 
 sub _post_as_json {
    my ($self, $uri, $content) = @_; my $key = $self->_read_private_key;
 
-   $content = $self->transcoder->encode( $content );
-
-   my $digest = Digest->new( 'SHA-512' ); $digest->add( $content );
-   my $req    = POST $uri, 'Content-SHA512' => $digest->hexdigest,
-                           'Content-Type'   => 'application/json',
-                           'Content'        => $content;
+   my $digest = Digest->new( 'SHA-512' );
    # TODO: Why doest hmac-sha512 not work?
    my $signer = Authen::HTTP::Signature->new
       ( headers => [ 'Content-SHA512' ], key => $key, key_id => hostname, );
+
+   $content = $self->transcoder->encode( $content ); $digest->add( $content );
+
+   my $req    = POST $uri, 'Content-SHA512' => $digest->hexdigest,
+                           'Content-Type'   => 'application/json',
+                           'Content'        => $content;
 
    return $self->user_agent->request( $signer->sign( $req ) );
 }
@@ -277,7 +275,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 5 $ of L<App::MCP::Worker>
+This documents version v0.2.$Rev: 6 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 
