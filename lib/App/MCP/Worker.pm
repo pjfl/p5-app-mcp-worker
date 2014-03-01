@@ -2,16 +2,18 @@ package App::MCP::Worker;
 
 use 5.010001;
 use namespace::sweep;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 6 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 7 $ =~ /\d+/gmx );
 
 use Moo;
-use App::MCP::Worker::Crypt::SRP::Blowfish;
 use Authen::HTTP::Signature;
 use Class::Usul::Constants;
 use Class::Usul::Crypt         qw( encrypt );
-use Class::Usul::Functions     qw( bson64id class2appdir exception pad throw );
+use Class::Usul::Functions     qw( base64_decode_ns base64_encode_ns bson64id
+                                   class2appdir exception pad throw );
 use Class::Usul::Options;
 use Convert::SSH2;
+use Crypt::Eksblowfish::Bcrypt qw( bcrypt );
+use Crypt::SRP;
 use Cwd                        qw( getcwd );
 use Data::Record;
 use Digest                     qw( );
@@ -126,73 +128,79 @@ sub set_client_password : method {
 sub _authenticate_session {
    my ($self, $uri, $opts) = @_; $opts //= {};
 
-   my $user_name = $opts->{user_name} || $self->user_name;
-   my $password  = $opts->{password } || $self->get_user_password( $user_name );
-   my $srp       = App::MCP::Worker::Crypt::SRP::Blowfish->new;
-   my $template  = $self->uri_template->{authenticate};
+   my $username = $opts->{user_name} || $self->user_name;
+   my $password = $opts->{password } || $self->get_user_password( $username );
+   my $srp      = Crypt::SRP->new( 'RFC5054-2048bit', 'SHA512' );
+   my $pub_key  = base64_encode_ns( ($srp->client_compute_A)[ 0 ] );
 
-   $uri .= sprintf $template, $user_name;
+   $uri .= sprintf $self->uri_template->{authenticate}, $username;
 
-  (my $pub_key)  = $srp->client_compute_A;
-   my $res       = $self->_get_with_sig( $uri, { public_key => $pub_key } );
-   my $token     = $self->_compute_token( $srp, $user_name, $password, $res );
+   my $res      = $self->_get_with_sig( $uri, { public_key => $pub_key } );
+   my $token    = $self->_compute_token( $srp, $username, $password, $res );
 
-   $res = $self->_post_as_json( $uri, { M1_token => $token } );
+   $res  = $self->_post_as_json( $uri, { M1_token => $token } );
 
-   my $content   = $self->transcoder->decode( $res->content );
+   my $content  = $self->transcoder->decode( $res->content );
 
    $res->is_success
       or throw error => 'User [_1] authentication failure code [_2]: [_3]',
-               args  => [ $user_name, $res->code, $content->{message} ];
-   $srp->client_verify_M2( $content->{M2_token} )
+               args  => [ $username, $res->code, $content->{message} ];
+   $srp->client_verify_M2( base64_decode_ns $content->{M2_token} )
       or throw error => 'User [_1] M2 token verification failure',
-               args  => [ $user_name ];
-   $self->log->debug( "User ${user_name} Session-Id ".$content->{id} );
+               args  => [ $username ];
+   $self->log->debug( "User ${username} Session-Id ".$content->{id} );
 
-   return { id => $content->{id}, shared_secret => $srp->get_secret_K };
+   my $shared_secret = base64_encode_ns $srp->get_secret_K;
+
+   return { id => $content->{id}, shared_secret => $shared_secret };
 }
 
 sub _compute_token {
-   my ($self, $srp, $user_name, $password, $res) = @_;
+   my ($self, $srp, $username, $password, $res) = @_;
 
    my $content = $self->transcoder->decode( $res->content );
 
    $res->is_success
       or throw error => 'User [_1] authentication failure code [_2]: [_3]',
-               args  => [ $user_name, $res->code, $content->{message} ];
-   $srp->client_verify_B( $content->{public_key} )
+               args  => [ $username, $res->code, $content->{message} ];
+   $srp->client_verify_B( base64_decode_ns( $content->{public_key} ) )
       or throw error => 'User [_1] server public key verification failure',
-               args  => [ $user_name ];
-   $srp->client_init( $user_name, $password, $content->{salt} );
+               args  => [ $username ];
 
-   return $srp->client_compute_M1;
+   my $crypted = __get_hashed_pw( bcrypt( $password, $content->{salt} ) );
+
+   $srp->client_init( $username, $crypted, $content->{salt} );
+
+   return base64_encode_ns $srp->client_compute_M1;
 }
 
 sub _get_with_sig {
-   my ($self, $uri, $content) = @_; my $key = $self->_read_private_key;
+   my ($self, $uri, $content) = @_; my $query = NUL;
 
+   for (keys %{ $content || {} }) {
+      $query .= $query ? '&' : '?'; $query .= "${_}=".$content->{ $_ };
+   }
+
+   my $req    = GET $uri.$query; $req->protocol( 'HTTP/1.1' );
+   my $key    = $self->_read_private_key;
    my $signer = Authen::HTTP::Signature->new
       ( headers => [ 'request-line' ], key => $key, key_id => hostname, );
-   my $req    = GET "${uri}?public_key=".$content->{public_key};
-
-   $req->protocol( 'HTTP/1.1' );
 
    return $self->user_agent->request( $signer->sign( $req ) );
 }
 
 sub _post_as_json {
-   my ($self, $uri, $content) = @_; my $key = $self->_read_private_key;
-
-   my $digest = Digest->new( 'SHA-512' );
-   # TODO: Why doest hmac-sha512 not work?
-   my $signer = Authen::HTTP::Signature->new
-      ( headers => [ 'Content-SHA512' ], key => $key, key_id => hostname, );
+   my ($self, $uri, $content) = @_; my $digest = Digest->new( 'SHA-512' );
 
    $content = $self->transcoder->encode( $content ); $digest->add( $content );
 
    my $req    = POST $uri, 'Content-SHA512' => $digest->hexdigest,
                            'Content-Type'   => 'application/json',
                            'Content'        => $content;
+   my $key    = $self->_read_private_key;
+   # TODO: Why doest hmac-sha512 not work?
+   my $signer = Authen::HTTP::Signature->new
+      ( headers => [ 'Content-SHA512' ], key => $key, key_id => hostname, );
 
    return $self->user_agent->request( $signer->sign( $req ) );
 }
@@ -263,6 +271,12 @@ sub __chdir {
    return $dir;
 }
 
+sub __get_hashed_pw {
+   my $crypted = shift; my @parts = split m{ [\$] }mx, $crypted;
+
+   return substr $parts[ -1 ], 22;
+}
+
 1;
 
 __END__
@@ -275,7 +289,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 6 $ of L<App::MCP::Worker>
+This documents version v0.2.$Rev: 7 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 
