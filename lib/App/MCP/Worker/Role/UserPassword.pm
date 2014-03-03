@@ -1,4 +1,4 @@
-package App::MCP::Worker::ClientAuth;
+package App::MCP::Worker::Role::UserPassword;
 
 use namespace::sweep;
 
@@ -83,11 +83,11 @@ __END__
 
 =head1 Name
 
-App::MCP::Worker::ClientAuth - One-line description of the modules purpose
+App::MCP::Worker::Role::UserPassword - One-line description of the modules purpose
 
 =head1 Synopsis
 
-   use App::MCP::Worker::ClientAuth;
+   with 'App::MCP::Worker::Role::UserPassword';
    # Brief but working code examples
 
 =head1 Description

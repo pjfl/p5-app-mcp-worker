@@ -2,37 +2,24 @@ package App::MCP::Worker;
 
 use 5.010001;
 use namespace::sweep;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 7 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 8 $ =~ /\d+/gmx );
 
 use Moo;
-use Authen::HTTP::Signature;
 use Class::Usul::Constants;
-use Class::Usul::Crypt         qw( encrypt );
-use Class::Usul::Functions     qw( base64_decode_ns base64_encode_ns bson64id
-                                   class2appdir exception pad throw );
+use Class::Usul::Crypt      qw( encrypt );
+use Class::Usul::Functions  qw( bson64id pad throw );
 use Class::Usul::Options;
-use Convert::SSH2;
-use Crypt::Eksblowfish::Bcrypt qw( bcrypt );
-use Crypt::SRP;
-use Cwd                        qw( getcwd );
 use Data::Record;
-use Digest                     qw( );
-use English                    qw( -no_match_vars );
-use File::DataClass::Types     qw( ArrayRef Directory HashRef LoadableClass
-                                   NonEmptySimpleStr NonZeroPositiveInt
-                                   Object SimpleStr Str );
-use HTTP::Status               qw( HTTP_EXPECTATION_FAILED HTTP_UNAUTHORIZED );
-use HTTP::Request::Common      qw( GET POST );
-use LWP::UserAgent;
-use JSON                       qw( );
+use English                 qw( -no_match_vars );
+use File::DataClass::Types  qw( ArrayRef Directory HashRef NonEmptySimpleStr
+                                NonZeroPositiveInt SimpleStr Str );
 use Regexp::Common;
-use Sys::Hostname;
 use TryCatch;
-use Type::Utils                qw( as coerce from subtype via );
-use Unexpected::Functions      qw( Unspecified );
+use Type::Utils             qw( as coerce from subtype via );
+use Unexpected::Functions   qw( Unspecified );
 
 extends q(Class::Usul::Programs);
-with    q(App::MCP::Worker::ClientAuth);
+with    q(App::MCP::Worker::Role::UserPassword);
 
 my $ShellCmd = subtype as ArrayRef;
 
@@ -84,12 +71,7 @@ has 'uri_template' => is => 'ro',   isa => HashRef, default => sub { {
    event           => '/api/event?runid=%s',
    job             => '/api/job?sessionid=%s', } };
 
-# Private attributes
-has '_transcoder'  => is => 'lazy', isa => Object,
-   builder         => sub { JSON->new }, reader => 'transcoder';
-
-has '_user_agent'  => is => 'lazy', isa => Object,
-   builder         => sub { LWP::UserAgent->new }, reader => 'user_agent';
+with q(App::MCP::Worker::Role::ClientAuth);
 
 # Public methods
 sub create_job : method {
@@ -97,11 +79,11 @@ sub create_job : method {
    my $json    = $self->transcoder;
    my $server  = $self->servers->[ 0 ];
    my $uri     = $self->protocol."://${server}:".$self->port;
-   my $sess    = $self->_authenticate_session( $uri );
+   my $sess    = $self->authenticate_session( $uri );
    my $sess_id = $sess->{id};
       $uri    .= sprintf $self->uri_template->{job}, $sess_id;
    my $job     = encrypt $sess->{shared_secret}, $json->encode( $self->job );
-   my $res     = $self->_post_as_json( $uri, { job => $job } );
+   my $res     = $self->post_as_json( $uri, { job => $job } );
    my $message = $json->decode( $res->content )->{message};
 
    $res->is_success
@@ -125,97 +107,6 @@ sub set_client_password : method {
 }
 
 # Private methods
-sub _authenticate_session {
-   my ($self, $uri, $opts) = @_; $opts //= {};
-
-   my $username = $opts->{user_name} || $self->user_name;
-   my $password = $opts->{password } || $self->get_user_password( $username );
-   my $srp      = Crypt::SRP->new( 'RFC5054-2048bit', 'SHA512' );
-   my $pub_key  = base64_encode_ns( ($srp->client_compute_A)[ 0 ] );
-
-   $uri .= sprintf $self->uri_template->{authenticate}, $username;
-
-   my $res      = $self->_get_with_sig( $uri, { public_key => $pub_key } );
-   my $token    = $self->_compute_token( $srp, $username, $password, $res );
-
-   $res  = $self->_post_as_json( $uri, { M1_token => $token } );
-
-   my $content  = $self->transcoder->decode( $res->content );
-
-   $res->is_success
-      or throw error => 'User [_1] authentication failure code [_2]: [_3]',
-               args  => [ $username, $res->code, $content->{message} ];
-   $srp->client_verify_M2( base64_decode_ns $content->{M2_token} )
-      or throw error => 'User [_1] M2 token verification failure',
-               args  => [ $username ];
-   $self->log->debug( "User ${username} Session-Id ".$content->{id} );
-
-   my $shared_secret = base64_encode_ns $srp->get_secret_K;
-
-   return { id => $content->{id}, shared_secret => $shared_secret };
-}
-
-sub _compute_token {
-   my ($self, $srp, $username, $password, $res) = @_;
-
-   my $content = $self->transcoder->decode( $res->content );
-
-   $res->is_success
-      or throw error => 'User [_1] authentication failure code [_2]: [_3]',
-               args  => [ $username, $res->code, $content->{message} ];
-   $srp->client_verify_B( base64_decode_ns( $content->{public_key} ) )
-      or throw error => 'User [_1] server public key verification failure',
-               args  => [ $username ];
-
-   my $crypted = __get_hashed_pw( bcrypt( $password, $content->{salt} ) );
-
-   $srp->client_init( $username, $crypted, $content->{salt} );
-
-   return base64_encode_ns $srp->client_compute_M1;
-}
-
-sub _get_with_sig {
-   my ($self, $uri, $content) = @_; my $query = NUL;
-
-   for (keys %{ $content || {} }) {
-      $query .= $query ? '&' : '?'; $query .= "${_}=".$content->{ $_ };
-   }
-
-   my $req    = GET $uri.$query; $req->protocol( 'HTTP/1.1' );
-   my $key    = $self->_read_private_key;
-   my $signer = Authen::HTTP::Signature->new
-      ( headers => [ 'request-line' ], key => $key, key_id => hostname, );
-
-   return $self->user_agent->request( $signer->sign( $req ) );
-}
-
-sub _post_as_json {
-   my ($self, $uri, $content) = @_; my $digest = Digest->new( 'SHA-512' );
-
-   $content = $self->transcoder->encode( $content ); $digest->add( $content );
-
-   my $req    = POST $uri, 'Content-SHA512' => $digest->hexdigest,
-                           'Content-Type'   => 'application/json',
-                           'Content'        => $content;
-   my $key    = $self->_read_private_key;
-   # TODO: Why doest hmac-sha512 not work?
-   my $signer = Authen::HTTP::Signature->new
-      ( headers => [ 'Content-SHA512' ], key => $key, key_id => hostname, );
-
-   return $self->user_agent->request( $signer->sign( $req ) );
-}
-
-sub _read_private_key {
-   my ($self, $key_id) = @_; state $cache //= {};
-
-   $key_id //= class2appdir $self->config->appclass;
-
-   my $key     = $cache->{ $key_id }; $key and return $key;
-   my $ssh_dir = $self->config->my_home->catdir( '.ssh' );
-
-   return $cache->{ $key_id } = $ssh_dir->catfile( "${key_id}.priv" )->all;
-}
-
 sub _run_command {
    my $self = shift; my $r; $self->_send_event( 'started' );
 
@@ -247,7 +138,7 @@ sub _send_event {
    for my $server (@{ $self->servers }) {
       try {
          my $uri     = sprintf $format, $server;
-         my $res     = $self->_post_as_json( $uri, { event => $event } );
+         my $res     = $self->post_as_json( $uri, { event => $event } );
          my $message = $json->decode( $res->content )->{message};
 
          $res->is_success
@@ -271,12 +162,6 @@ sub __chdir {
    return $dir;
 }
 
-sub __get_hashed_pw {
-   my $crypted = shift; my @parts = split m{ [\$] }mx, $crypted;
-
-   return substr $parts[ -1 ], 22;
-}
-
 1;
 
 __END__
@@ -289,7 +174,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 7 $ of L<App::MCP::Worker>
+This documents version v0.2.$Rev: 8 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 

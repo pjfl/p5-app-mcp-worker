@@ -1,5 +1,6 @@
 Revision history for App::MCP::Worker
 
+          - Added ::Roles
           - SRP API authentication complete
           - Replaced DH key exchange with SRP::Blowfish
           - Now with DH key exchange
