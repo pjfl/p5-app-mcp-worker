@@ -8,7 +8,6 @@ use Class::Usul::Constants     qw( NUL );
 use Class::Usul::Functions     qw( base64_decode_ns base64_encode_ns
                                    class2appdir throw );
 use Class::Usul::Types         qw( Object );
-use Crypt::Eksblowfish::Bcrypt qw( bcrypt );
 use Crypt::SRP;
 use Digest                     qw( );
 use HTTP::Request::Common      qw( GET POST );

@@ -2,7 +2,7 @@ package App::MCP::Worker;
 
 use 5.010001;
 use namespace::autoclean;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 10 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 11 $ =~ /\d+/gmx );
 
 use Moo;
 use Class::Usul::Constants  qw( EXCEPTION_CLASS FALSE OK SPC TRUE );
@@ -113,7 +113,10 @@ sub _run_command {
 
    try {
       $self->directory and __chdir( $self->directory );
-      $self->_send_event( 'finish', $self->run_cmd( $self->command ) );
+
+      my $r = $self->run_cmd( $self->command, { expected_rv => 255 } );
+
+      $self->_send_event( 'finish', $r );
    }
    catch { $self->_send_event( 'terminate' ) };
 
@@ -174,7 +177,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 10 $ of L<App::MCP::Worker>
+This documents version v0.2.$Rev: 11 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 
