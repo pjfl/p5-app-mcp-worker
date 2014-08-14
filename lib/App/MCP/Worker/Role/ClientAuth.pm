@@ -1,10 +1,10 @@
 package App::MCP::Worker::Role::ClientAuth;
 
-use 5.010001;
-use namespace::sweep;
+use feature 'state';
+use namespace::autoclean;
 
 use Authen::HTTP::Signature;
-use Class::Usul::Constants;
+use Class::Usul::Constants     qw( NUL );
 use Class::Usul::Functions     qw( base64_decode_ns base64_encode_ns
                                    class2appdir throw );
 use Class::Usul::Types         qw( Object );
@@ -17,7 +17,7 @@ use LWP::UserAgent;
 use Sys::Hostname;
 use Moo::Role;
 
-requires qw( config get_user_password log uri_template user_name );
+requires qw( config get_user_password log user_name );
 
 # Private attributes
 has '_transcoder'  => is => 'lazy', isa => Object,
@@ -31,11 +31,11 @@ sub authenticate_session {
    my ($self, $uri, $opts) = @_; $opts //= {};
 
    my $username = $opts->{user_name} || $self->user_name;
-   my $password = $opts->{password } || $self->get_user_password( $username );
+   my $password = $opts->{password } // $self->get_user_password( $username );
    my $srp      = Crypt::SRP->new( 'RFC5054-2048bit', 'SHA512' );
    my $pub_key  = base64_encode_ns( ($srp->client_compute_A)[ 0 ] );
 
-   $uri .= sprintf $self->uri_template->{authenticate}, $username;
+   $uri .= sprintf $opts->{template} // '/api/authenticate/%s', $username;
 
    my $res      = $self->get_with_sig( $uri, { public_key => $pub_key } );
    my $token    = $self->_compute_token( $srp, $username, $password, $res );
@@ -62,6 +62,7 @@ sub authenticate_session {
 sub get_with_sig {
    my ($self, $uri, $content) = @_; my $query = NUL;
 
+   # TODO: If $uri was_a URI::http[s] then we can use query_form
    for (keys %{ $content || {} }) {
       $query .= $query ? '&' : '?'; $query .= "${_}=".$content->{ $_ };
    }
@@ -77,7 +78,7 @@ sub get_with_sig {
 sub post_as_json {
    my ($self, $uri, $content) = @_; my $digest = Digest->new( 'SHA-512' );
 
-   $content = $self->transcoder->encode( $content ); $digest->add( $content );
+   $content   = $self->transcoder->encode( $content ); $digest->add( $content );
 
    my $req    = POST $uri, 'Content-SHA512' => $digest->hexdigest,
                            'Content-Type'   => 'application/json',

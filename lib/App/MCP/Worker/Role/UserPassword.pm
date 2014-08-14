@@ -1,8 +1,8 @@
 package App::MCP::Worker::Role::UserPassword;
 
-use namespace::sweep;
+use namespace::autoclean;
 
-use Class::Usul::Constants;
+use Class::Usul::Constants   qw( EXCEPTION_CLASS FALSE NUL TRUE );
 use Class::Usul::Crypt::Util qw( decrypt_from_config encrypt_for_config
                                  is_encrypted );
 use Class::Usul::Functions   qw( throw );

@@ -1,11 +1,11 @@
 package App::MCP::Worker;
 
 use 5.010001;
-use namespace::sweep;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 8 $ =~ /\d+/gmx );
+use namespace::autoclean;
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 9 $ =~ /\d+/gmx );
 
 use Moo;
-use Class::Usul::Constants;
+use Class::Usul::Constants  qw( EXCEPTION_CLASS FALSE OK SPC TRUE );
 use Class::Usul::Crypt      qw( encrypt );
 use Class::Usul::Functions  qw( bson64id pad throw );
 use Class::Usul::Options;
@@ -14,7 +14,7 @@ use English                 qw( -no_match_vars );
 use File::DataClass::Types  qw( ArrayRef Directory HashRef NonEmptySimpleStr
                                 NonZeroPositiveInt SimpleStr Str );
 use Regexp::Common;
-use TryCatch;
+use Try::Tiny;
 use Type::Utils             qw( as coerce from subtype via );
 use Unexpected::Functions   qw( Unspecified );
 
@@ -79,7 +79,8 @@ sub create_job : method {
    my $json    = $self->transcoder;
    my $server  = $self->servers->[ 0 ];
    my $uri     = $self->protocol."://${server}:".$self->port;
-   my $sess    = $self->authenticate_session( $uri );
+   my $plate   = $self->uri_template->{authenticate};
+   my $sess    = $self->authenticate_session( $uri, { template => $plate } );
    my $sess_id = $sess->{id};
       $uri    .= sprintf $self->uri_template->{job}, $sess_id;
    my $job     = encrypt $sess->{shared_secret}, $json->encode( $self->job );
@@ -108,15 +109,14 @@ sub set_client_password : method {
 
 # Private methods
 sub _run_command {
-   my $self = shift; my $r; $self->_send_event( 'started' );
+   my $self = shift; $self->_send_event( 'started' );
 
    try {
       $self->directory and __chdir( $self->directory );
-      $r = $self->run_cmd( $self->command );
+      $self->_send_event( 'finish', $self->run_cmd( $self->command ) );
    }
-   catch ($e) { $self->_send_event( 'terminate' ); return }
+   catch { $self->_send_event( 'terminate' ) };
 
-   $self->_send_event( 'finish', $r );
    return;
 }
 
@@ -146,7 +146,7 @@ sub _send_event {
                      args  => [ $runid, $res->code, $message ];
          $self->log->debug( $prefix.$message );
       }
-      catch ($e) { $self->log->error( $e ) }
+      catch { $self->log->error( $_ ) };
    }
 
    return;
@@ -174,7 +174,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 8 $ of L<App::MCP::Worker>
+This documents version v0.2.$Rev: 9 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 
@@ -239,11 +239,11 @@ Larry Wall - For the Perl programming language
 
 =head1 Author
 
-Peter Flanigan, C<< <Support at RoxSoft dot co dot uk> >>
+Peter Flanigan, C<< <pjfl@cpan.org> >>
 
 =head1 License and Copyright
 
-Copyright (c) 2013 Peter Flanigan. All rights reserved
+Copyright (c) 2014 Peter Flanigan. All rights reserved
 
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself. See L<perlartistic>
