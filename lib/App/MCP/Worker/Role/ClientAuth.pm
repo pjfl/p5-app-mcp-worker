@@ -105,9 +105,7 @@ sub _compute_token {
       or throw error => 'User [_1] server public key verification failure',
                args  => [ $username ];
 
-   my $crypted = __get_hashed_pw( bcrypt( $password, $content->{salt} ) );
-
-   $srp->client_init( $username, $crypted, $content->{salt} );
+   $srp->client_init( $username, $password, $content->{salt} );
 
    return base64_encode_ns $srp->client_compute_M1;
 }
