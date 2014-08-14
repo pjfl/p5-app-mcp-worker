@@ -4,7 +4,7 @@ App::MCP::Worker - Remotely executed worker process
 
 # Version
 
-This documents version v0.2.$Rev: 1 $
+This documents version v0.2.$Rev: 9 $ of [App::MCP::Worker](https://metacpan.org/pod/App::MCP::Worker)
 
 # Synopsis
 
@@ -25,15 +25,17 @@ Defines the following attributes;
 - `runid`
 - `servers`
 - `token`
-- `uri_format`
+- `uri_template`
 
 # Subroutines/Methods
+
+## create\_job - Creates a new job on an MCP job scheduler
 
 # Diagnostics
 
 # Dependencies
 
-- [Class::Usul](https://metacpan.org/module/Class::Usul)
+- [Class::Usul](https://metacpan.org/pod/Class::Usul)
 
 # Incompatibilities
 
@@ -51,14 +53,14 @@ Larry Wall - For the Perl programming language
 
 # Author
 
-Peter Flanigan, `<Support at RoxSoft dot co dot uk>`
+Peter Flanigan, `<pjfl@cpan.org>`
 
 # License and Copyright
 
-Copyright (c) 2012 Peter Flanigan. All rights reserved
+Copyright (c) 2014 Peter Flanigan. All rights reserved
 
 This program is free software; you can redistribute it and/or modify it
-under the same terms as Perl itself. See [perlartistic](https://metacpan.org/module/perlartistic)
+under the same terms as Perl itself. See [perlartistic](https://metacpan.org/pod/perlartistic)
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT WARRANTY; without even the implied warranty of

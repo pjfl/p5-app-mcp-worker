@@ -1,5 +1,6 @@
 Revision history for App::MCP::Worker
 
+          - Fixed copyright_holder
           - Replaced namespace::sweep with autoclean
           - Added ::Roles
           - SRP API authentication complete
