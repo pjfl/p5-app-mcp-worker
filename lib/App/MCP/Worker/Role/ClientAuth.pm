@@ -76,8 +76,12 @@ sub get_with_sig {
    my $key    = $self->_read_private_key;
    my $signer = Authen::HTTP::Signature->new
       ( headers => [ 'request-line' ], key => $key, key_id => hostname, );
+   my $res    = $self->user_agent->request( $signer->sign( $req ) );
 
-   return $self->user_agent->request( $signer->sign( $req ) );
+   try   { $res->content( $self->transcoder->decode( $res->content ) ) }
+   catch { $res->content( { message => $res->content } ) };
+
+   return $res;
 }
 
 sub post_as_json {
@@ -95,7 +99,7 @@ sub post_as_json {
    my $res    =  $self->user_agent->request( $signer->sign( $req ) );
 
    try   { $res->content( $self->transcoder->decode( $res->content ) ) }
-   catch { $res->content( { message => $_ } ) };
+   catch { $res->content( { message => $res->content } ) };
 
    return $res;
 }
@@ -104,7 +108,7 @@ sub post_as_json {
 sub _compute_token {
    my ($self, $srp, $username, $password, $res) = @_;
 
-   my $content = $self->transcoder->decode( $res->content );
+   my $content = $res->content;
 
    $res->is_success
       or throw error => 'User [_1] authentication failure code [_2]: [_3]',
