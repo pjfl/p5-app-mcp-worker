@@ -14,6 +14,7 @@ use HTTP::Request::Common  qw( GET POST );
 use JSON::MaybeXS          qw( );
 use LWP::UserAgent;
 use Sys::Hostname;
+use Try::Tiny;
 use Unexpected::Functions  qw( Unspecified );
 use Moo::Role;
 
@@ -46,7 +47,7 @@ sub authenticate_session {
 
    $res  = $self->post_as_json( $uri, { M1_token => $token } );
 
-   my $content  = $self->transcoder->decode( $res->content );
+   my $content  = $res->content;
 
    $res->is_success
       or throw error => 'User [_1] authentication failure code [_2]: [_3]',
@@ -91,8 +92,12 @@ sub post_as_json {
    # TODO: Why doest hmac-sha512 not work?
    my $signer = Authen::HTTP::Signature->new
       ( headers => [ 'Content-SHA512' ], key => $key, key_id => hostname, );
+   my $res    =  $self->user_agent->request( $signer->sign( $req ) );
 
-   return $self->user_agent->request( $signer->sign( $req ) );
+   try   { $res->content( $self->transcoder->decode( $res->content ) ) }
+   catch { $res->content( { message => $_ } ) };
+
+   return $res;
 }
 
 # Private methods

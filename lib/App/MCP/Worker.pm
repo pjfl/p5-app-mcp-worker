@@ -2,7 +2,7 @@ package App::MCP::Worker;
 
 use 5.010001;
 use namespace::autoclean;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 11 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 12 $ =~ /\d+/gmx );
 
 use Moo;
 use Class::Usul::Constants  qw( EXCEPTION_CLASS FALSE OK SPC TRUE );
@@ -85,7 +85,7 @@ sub create_job : method {
       $uri    .= sprintf $self->uri_template->{job}, $sess_id;
    my $job     = encrypt $sess->{shared_secret}, $json->encode( $self->job );
    my $res     = $self->post_as_json( $uri, { job => $job } );
-   my $message = $json->decode( $res->content )->{message};
+   my $message = $res->content->{message};
 
    $res->is_success
       or throw error => 'Session [_1] create job failed code [_2]: [_3]',
@@ -142,7 +142,7 @@ sub _send_event {
       try {
          my $uri     = sprintf $format, $server;
          my $res     = $self->post_as_json( $uri, { event => $event } );
-         my $message = $json->decode( $res->content )->{message};
+         my $message = $res->content->{message};
 
          $res->is_success
             or throw error => 'Run [_1] send event failed code [_2]: [_3]',
@@ -177,7 +177,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 11 $ of L<App::MCP::Worker>
+This documents version v0.2.$Rev: 12 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 
@@ -220,9 +220,36 @@ Defines the following attributes;
 
 =head1 Dependencies
 
+You need to install the Gnu MP library (C<libgmp3-dev>) which is required by
+L<Crypt::SRP> to install this distribution
+
 =over 3
 
+=item L<namespace::autoclean>
+
+=item L<Authen::HTTP::Signature>
+
 =item L<Class::Usul>
+
+=item L<Crypt::SRP>
+
+=item L<Data::Record>
+
+=item L<File::DataClass>
+
+=item L<JSON::MaybeXS>
+
+=item L<LWP::UserAgent>
+
+=item L<Moo>
+
+=item L<Regexp::Common>
+
+=item L<Try::Tiny>
+
+=item L<Type::Tiny>
+
+=item L<Unexpected>
 
 =back
 
