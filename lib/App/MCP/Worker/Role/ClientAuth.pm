@@ -4,37 +4,42 @@ use feature 'state';
 use namespace::autoclean;
 
 use Authen::HTTP::Signature;
-use Class::Usul::Constants     qw( NUL );
-use Class::Usul::Functions     qw( base64_decode_ns base64_encode_ns
-                                   class2appdir throw );
-use Class::Usul::Types         qw( Object );
+use Class::Usul::Constants qw( EXCEPTION_CLASS NUL );
+use Class::Usul::Functions qw( base64_decode_ns base64_encode_ns
+                               class2appdir is_hashref throw );
+use Class::Usul::Types     qw( Object );
 use Crypt::SRP;
-use Digest                     qw( );
-use HTTP::Request::Common      qw( GET POST );
-use JSON                       qw( );
+use Digest                 qw( );
+use HTTP::Request::Common  qw( GET POST );
+use JSON::MaybeXS          qw( );
 use LWP::UserAgent;
 use Sys::Hostname;
+use Unexpected::Functions  qw( Unspecified );
 use Moo::Role;
 
 requires qw( config get_user_password log user_name );
 
 # Private attributes
 has '_transcoder'  => is => 'lazy', isa => Object,
-   builder         => sub { JSON->new }, reader => 'transcoder';
+   builder         => sub { JSON::MaybeXS->new }, reader => 'transcoder';
 
 has '_user_agent'  => is => 'lazy', isa => Object,
    builder         => sub { LWP::UserAgent->new }, reader => 'user_agent';
 
 # Public methods
 sub authenticate_session {
-   my ($self, $uri, $opts) = @_; $opts //= {};
+   my ($self, $uri, $opts) = @_;
 
-   my $username = $opts->{user_name} || $self->user_name;
+   $uri or throw class => Unspecified, args => [ 'uri' ];
+   (is_hashref $opts and $opts->{template})
+        or throw class => Unspecified, args => [ 'template' ];
+
+   my $username = $opts->{user_name} // $self->user_name;
    my $password = $opts->{password } // $self->get_user_password( $username );
    my $srp      = Crypt::SRP->new( 'RFC5054-2048bit', 'SHA512' );
    my $pub_key  = base64_encode_ns( ($srp->client_compute_A)[ 0 ] );
 
-   $uri .= sprintf $opts->{template} // '/api/authenticate/%s', $username;
+   $uri .= sprintf $opts->{template}, $username;
 
    my $res      = $self->get_with_sig( $uri, { public_key => $pub_key } );
    my $token    = $self->_compute_token( $srp, $username, $password, $res );
