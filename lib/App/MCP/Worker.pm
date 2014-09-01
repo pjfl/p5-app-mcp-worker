@@ -2,7 +2,7 @@ package App::MCP::Worker;
 
 use 5.010001;
 use namespace::autoclean;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 12 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 13 $ =~ /\d+/gmx );
 
 use Moo;
 use Class::Usul::Constants  qw( EXCEPTION_CLASS FALSE OK SPC TRUE );
@@ -177,7 +177,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 12 $ of L<App::MCP::Worker>
+This documents version v0.2.$Rev: 13 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 
@@ -215,6 +215,8 @@ Defines the following attributes;
 =head1 Subroutines/Methods
 
 =head2 create_job - Creates a new job on an MCP job scheduler
+
+=head2 set_client_password - Stores the clients API password in a local file
 
 =head1 Diagnostics
 

@@ -76,12 +76,8 @@ sub get_with_sig {
    my $key    = $self->_read_private_key;
    my $signer = Authen::HTTP::Signature->new
       ( headers => [ 'request-line' ], key => $key, key_id => hostname, );
-   my $res    = $self->user_agent->request( $signer->sign( $req ) );
 
-   try   { $res->content( $self->transcoder->decode( $res->content ) ) }
-   catch { $res->content( { message => $res->content } ) };
-
-   return $res;
+   return $self->_decoded_response_to_signed_request( $signer->sign( $req ) );
 }
 
 sub post_as_json {
@@ -96,12 +92,8 @@ sub post_as_json {
    # TODO: Why doest hmac-sha512 not work?
    my $signer = Authen::HTTP::Signature->new
       ( headers => [ 'Content-SHA512' ], key => $key, key_id => hostname, );
-   my $res    =  $self->user_agent->request( $signer->sign( $req ) );
 
-   try   { $res->content( $self->transcoder->decode( $res->content ) ) }
-   catch { $res->content( { message => $res->content } ) };
-
-   return $res;
+   return $self->_decoded_response_to_signed_request( $signer->sign( $req ) );
 }
 
 # Private methods
@@ -121,6 +113,15 @@ sub _compute_token {
    $srp->client_init( $username, $password, $content->{salt} );
 
    return base64_encode_ns $srp->client_compute_M1;
+}
+
+sub _decoded_response_to_signed_request {
+   my ($self, $req) = @_; my $res = $self->user_agent->request( $req );
+
+   try   { $res->content( $self->transcoder->decode( $res->content ) ) }
+   catch { $res->content( { message => $res->content } ) };
+
+   return $res;
 }
 
 sub _read_private_key {
