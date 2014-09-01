@@ -2,7 +2,7 @@ package App::MCP::Worker;
 
 use 5.010001;
 use namespace::autoclean;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 13 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 14 $ =~ /\d+/gmx );
 
 use Moo;
 use Class::Usul::Constants  qw( EXCEPTION_CLASS FALSE OK SPC TRUE );
@@ -78,12 +78,12 @@ sub create_job : method {
    my $self    = shift;
    my $json    = $self->transcoder;
    my $server  = $self->servers->[ 0 ];
-   my $uri     = $self->protocol."://${server}:".$self->port;
    my $plate   = $self->uri_template->{authenticate};
+   my $uri     = $self->protocol."://${server}:".$self->port;
    my $sess    = $self->authenticate_session( $uri, { template => $plate } );
    my $sess_id = $sess->{id};
-      $uri    .= sprintf $self->uri_template->{job}, $sess_id;
    my $job     = encrypt $sess->{shared_secret}, $json->encode( $self->job );
+      $uri    .= sprintf $self->uri_template->{job}, $sess_id;
    my $res     = $self->post_as_json( $uri, { job => $job } );
    my $message = $res->content->{message};
 
@@ -177,7 +177,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 13 $ of L<App::MCP::Worker>
+This documents version v0.2.$Rev: 14 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 

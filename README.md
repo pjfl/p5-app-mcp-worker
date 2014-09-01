@@ -4,7 +4,7 @@ App::MCP::Worker - Remotely executed worker process
 
 # Version
 
-This documents version v0.2.$Rev: 12 $ of [App::MCP::Worker](https://metacpan.org/pod/App::MCP::Worker)
+This documents version v0.2.$Rev: 13 $ of [App::MCP::Worker](https://metacpan.org/pod/App::MCP::Worker)
 
 # Synopsis
 
@@ -30,6 +30,8 @@ Defines the following attributes;
 # Subroutines/Methods
 
 ## create\_job - Creates a new job on an MCP job scheduler
+
+## set\_client\_password - Stores the clients API password in a local file
 
 # Diagnostics
 
