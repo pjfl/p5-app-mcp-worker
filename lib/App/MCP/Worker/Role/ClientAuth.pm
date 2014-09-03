@@ -10,6 +10,7 @@ use Class::Usul::Functions qw( base64_decode_ns base64_encode_ns
 use Class::Usul::Types     qw( Object );
 use Crypt::SRP;
 use Digest                 qw( );
+use Digest::MD5            qw( md5_hex );
 use HTTP::Request::Common  qw( GET POST );
 use JSON::MaybeXS          qw( );
 use LWP::UserAgent;
@@ -21,11 +22,15 @@ use Moo::Role;
 requires qw( config get_user_password log user_name );
 
 # Private attributes
-has '_transcoder'  => is => 'lazy', isa => Object,
-   builder         => sub { JSON::MaybeXS->new }, reader => 'transcoder';
+has '_srp'        => is => 'lazy', isa => Object,
+   builder        => sub { Crypt::SRP->new( 'RFC5054-2048bit', 'SHA512' ) },
+   reader         => 'srp';
 
-has '_user_agent'  => is => 'lazy', isa => Object,
-   builder         => sub { LWP::UserAgent->new }, reader => 'user_agent';
+has '_transcoder' => is => 'lazy', isa => Object,
+   builder        => sub { JSON::MaybeXS->new  }, reader => 'transcoder';
+
+has '_user_agent' => is => 'lazy', isa => Object,
+   builder        => sub { LWP::UserAgent->new }, reader => 'user_agent';
 
 # Public methods
 sub authenticate_session {
@@ -37,13 +42,14 @@ sub authenticate_session {
 
    my $username = $opts->{user_name} // $self->user_name;
    my $password = $opts->{password } // $self->get_user_password( $username );
-   my $srp      = Crypt::SRP->new( 'RFC5054-2048bit', 'SHA512' );
-   my $pub_key  = base64_encode_ns( ($srp->client_compute_A)[ 0 ] );
+   my $raw_key  = ($self->srp->client_compute_A)[ 0 ];
 
+   $self->log->debug( 'Auth pubic key '.(md5_hex $raw_key) );
    $uri .= sprintf $opts->{template}, $username;
 
+   my $pub_key  = base64_encode_ns $raw_key;
    my $res      = $self->get_with_sig( $uri, { public_key => $pub_key } );
-   my $token    = $self->_compute_token( $srp, $username, $password, $res );
+   my $token    = $self->_compute_token( $username, $password, $res );
 
    $res  = $self->post_as_json( $uri, { M1_token => $token } );
 
@@ -53,13 +59,13 @@ sub authenticate_session {
       or throw error => 'User [_1] authentication failure code [_2]: [_3]',
                args  => [ $username, $res->code, $content->{message} ];
 
-   $srp->client_verify_M2( base64_decode_ns $content->{M2_token} )
+   $self->srp->client_verify_M2( base64_decode_ns $content->{M2_token} )
       or throw error => 'User [_1] M2 token verification failure',
                args  => [ $username ];
 
    $self->log->debug( "User ${username} Session-Id ".$content->{id} );
 
-   my $shared_secret = base64_encode_ns $srp->get_secret_K;
+   my $shared_secret = base64_encode_ns $self->srp->get_secret_K;
 
    return { id => $content->{id}, shared_secret => $shared_secret };
 }
@@ -98,21 +104,26 @@ sub post_as_json {
 
 # Private methods
 sub _compute_token {
-   my ($self, $srp, $username, $password, $res) = @_;
-
-   my $content = $res->content;
+   my ($self, $username, $password, $res) = @_; my $content = $res->content;
 
    $res->is_success
       or throw error => 'User [_1] authentication failure code [_2]: [_3]',
                args  => [ $username, $res->code, $content->{message} ];
 
-   $srp->client_verify_B( base64_decode_ns( $content->{public_key} ) )
+   my $server_pub_key = base64_decode_ns( $content->{public_key} );
+
+   $self->log->debug( 'Auth server pub key '.(md5_hex $server_pub_key ) );
+
+   $self->srp->client_verify_B( $server_pub_key )
       or throw error => 'User [_1] server public key verification failure',
                args  => [ $username ];
 
-   $srp->client_init( $username, $password, $content->{salt} );
+   $self->srp->client_init( $username, $password, $content->{salt} );
 
-   return base64_encode_ns $srp->client_compute_M1;
+   my $token = $self->srp->client_compute_M1;
+
+   $self->log->debug( 'Auth M1 token '.(md5_hex $token) );
+   return base64_encode_ns $token;
 }
 
 sub _decoded_response_to_signed_request {

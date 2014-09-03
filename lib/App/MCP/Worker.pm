@@ -2,7 +2,7 @@ package App::MCP::Worker;
 
 use 5.010001;
 use namespace::autoclean;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 14 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 15 $ =~ /\d+/gmx );
 
 use Moo;
 use Class::Usul::Constants  qw( EXCEPTION_CLASS FALSE OK SPC TRUE );
@@ -177,7 +177,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 14 $ of L<App::MCP::Worker>
+This documents version v0.2.$Rev: 15 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 
@@ -222,7 +222,7 @@ Defines the following attributes;
 
 =head1 Dependencies
 
-You need to install the Gnu MP library (C<libgmp3-dev>) which is required by
+You need to install the GNU MP library (C<libgmp3-dev>) which is required by
 L<Crypt::SRP> to install this distribution
 
 =over 3
