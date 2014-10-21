@@ -2,7 +2,7 @@ package App::MCP::Worker;
 
 use 5.010001;
 use namespace::autoclean;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 15 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 16 $ =~ /\d+/gmx );
 
 use Moo;
 use Class::Usul::Constants  qw( EXCEPTION_CLASS FALSE OK SPC TRUE );
@@ -47,7 +47,7 @@ option 'protocol'  => is => 'ro',   isa => NonEmptySimpleStr, default => 'http',
    format          => 's', short => 'P';
 
 option 'servers'   => is => 'ro',   isa => $ServerList, default => 'localhost',
-   documentation   => 'List of servers to send request to',
+   documentation   => 'List of servers to send response status to',
    coerce          => $ServerList->coercion, format => 's', short => 's';
 
 option 'user_name' => is => 'ro',   isa => NonEmptySimpleStr,
@@ -118,7 +118,7 @@ sub _run_command {
 
       $self->_send_event( 'finish', $r );
    }
-   catch { $self->_send_event( 'terminate' ) };
+   catch { $self->log->error( $_ ); $self->_send_event( 'terminate' ) };
 
    return;
 }
@@ -177,7 +177,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 15 $ of L<App::MCP::Worker>
+This documents version v0.2.$Rev: 16 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 

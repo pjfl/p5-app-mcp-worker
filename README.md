@@ -4,7 +4,7 @@ App::MCP::Worker - Remotely executed worker process
 
 # Version
 
-This documents version v0.2.$Rev: 14 $ of [App::MCP::Worker](https://metacpan.org/pod/App::MCP::Worker)
+This documents version v0.2.$Rev: 15 $ of [App::MCP::Worker](https://metacpan.org/pod/App::MCP::Worker)
 
 # Synopsis
 
@@ -37,7 +37,7 @@ Defines the following attributes;
 
 # Dependencies
 
-You need to install the Gnu MP library (`libgmp3-dev`) which is required by
+You need to install the GNU MP library (`libgmp3-dev`) which is required by
 [Crypt::SRP](https://metacpan.org/pod/Crypt::SRP) to install this distribution
 
 - [namespace::autoclean](https://metacpan.org/pod/namespace::autoclean)

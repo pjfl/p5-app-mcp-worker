@@ -1,5 +1,6 @@
 Revision history for App::MCP::Worker
 
+          - Started logging _run_command errors
           - Added create_job test
           - Job creation API works with new Request object
           - Fixed copyright_holder

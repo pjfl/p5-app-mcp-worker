@@ -36,9 +36,9 @@ has '_user_agent' => is => 'lazy', isa => Object,
 sub authenticate_session {
    my ($self, $uri, $opts) = @_;
 
-   $uri or throw class => Unspecified, args => [ 'uri' ];
+   $uri or throw Unspecified, args => [ 'uri' ];
    (is_hashref $opts and $opts->{template})
-        or throw class => Unspecified, args => [ 'template' ];
+        or throw Unspecified, args => [ 'template' ];
 
    my $username = $opts->{user_name} // $self->user_name;
    my $password = $opts->{password } // $self->get_user_password( $username );
@@ -51,17 +51,16 @@ sub authenticate_session {
    my $res      = $self->get_with_sig( $uri, { public_key => $pub_key } );
    my $token    = $self->_compute_token( $username, $password, $res );
 
-   $res  = $self->post_as_json( $uri, { M1_token => $token } );
+   $res = $self->post_as_json( $uri, { M1_token => $token } );
 
    my $content  = $res->content;
 
    $res->is_success
-      or throw error => 'User [_1] authentication failure code [_2]: [_3]',
-               args  => [ $username, $res->code, $content->{message} ];
+      or throw 'User [_1] authentication failure code [_2]: [_3]',
+               args => [ $username, $res->code, $content->{message} ];
 
    $self->srp->client_verify_M2( base64_decode_ns $content->{M2_token} )
-      or throw error => 'User [_1] M2 token verification failure',
-               args  => [ $username ];
+      or throw 'User [_1] M2 token verification failure', args => [ $username ];
 
    $self->log->debug( "User ${username} Session-Id ".$content->{id} );
 
@@ -107,16 +106,16 @@ sub _compute_token {
    my ($self, $username, $password, $res) = @_; my $content = $res->content;
 
    $res->is_success
-      or throw error => 'User [_1] authentication failure code [_2]: [_3]',
-               args  => [ $username, $res->code, $content->{message} ];
+      or throw 'User [_1] authentication failure code [_2]: [_3]',
+               args => [ $username, $res->code, $content->{message} ];
 
    my $server_pub_key = base64_decode_ns( $content->{public_key} );
 
    $self->log->debug( 'Auth server pub key '.(md5_hex $server_pub_key ) );
 
    $self->srp->client_verify_B( $server_pub_key )
-      or throw error => 'User [_1] server public key verification failure',
-               args  => [ $username ];
+      or throw 'User [_1] server public key verification failure',
+               args => [ $username ];
 
    $self->srp->client_init( $username, $password, $content->{salt} );
 

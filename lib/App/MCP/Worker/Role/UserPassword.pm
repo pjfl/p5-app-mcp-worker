@@ -28,7 +28,7 @@ sub get_user_password {
 sub set_user_password {
    my ($self, $user_name, $password) = @_;
 
-   $user_name or throw class => Unspecified, args => [ 'user name' ];
+   $user_name or throw Unspecified, args => [ 'user name' ];
 
    unless ($password) {
       $password = $self->get_line
@@ -39,7 +39,7 @@ sub set_user_password {
       $password eq $again or throw 'Passwords do not match';
    }
 
-   $password or throw class => Unspecified, args => [ 'password' ];
+   $password or throw Unspecified, args => [ 'password' ];
 
    my $data = $self->_read_rc_file; $data->{users}->{ $user_name } = $password;
 
