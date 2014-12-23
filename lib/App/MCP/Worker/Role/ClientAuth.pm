@@ -38,7 +38,7 @@ sub authenticate_session {
 
    $uri or throw Unspecified, args => [ 'uri' ];
    (is_hashref $opts and $opts->{template})
-        or throw Unspecified, args => [ 'template' ];
+      or throw Unspecified, [ 'template' ];
 
    my $username = $opts->{user_name} // $self->user_name;
    my $password = $opts->{password } // $self->get_user_password( $username );
@@ -57,10 +57,10 @@ sub authenticate_session {
 
    $res->is_success
       or throw 'User [_1] authentication failure code [_2]: [_3]',
-               args => [ $username, $res->code, $content->{message} ];
+               [ $username, $res->code, $content->{message} ];
 
    $self->srp->client_verify_M2( base64_decode_ns $content->{M2_token} )
-      or throw 'User [_1] M2 token verification failure', args => [ $username ];
+      or throw 'User [_1] M2 token verification failure', [ $username ];
 
    $self->log->debug( "User ${username} Session-Id ".$content->{id} );
 
@@ -107,7 +107,7 @@ sub _compute_token {
 
    $res->is_success
       or throw 'User [_1] authentication failure code [_2]: [_3]',
-               args => [ $username, $res->code, $content->{message} ];
+               [ $username, $res->code, $content->{message} ];
 
    my $server_pub_key = base64_decode_ns( $content->{public_key} );
 
@@ -115,7 +115,7 @@ sub _compute_token {
 
    $self->srp->client_verify_B( $server_pub_key )
       or throw 'User [_1] server public key verification failure',
-               args => [ $username ];
+               [ $username ];
 
    $self->srp->client_init( $username, $password, $content->{salt} );
 

@@ -2,7 +2,7 @@ package App::MCP::Worker::Role::UserPassword;
 
 use namespace::autoclean;
 
-use Class::Usul::Constants   qw( EXCEPTION_CLASS FALSE NUL TRUE );
+use Class::Usul::Constants   qw( AS_PASSWORD EXCEPTION_CLASS FALSE NUL TRUE );
 use Class::Usul::Crypt::Util qw( decrypt_from_config encrypt_for_config
                                  is_encrypted );
 use Class::Usul::Functions   qw( throw );
@@ -20,7 +20,7 @@ sub get_user_password {
    my ($self, $user_name) = @_;
 
    my $password = $self->_read_rc_file->{users}->{ $user_name }
-         || $self->get_line( '+Enter password', NUL, TRUE, undef, FALSE, TRUE );
+               || $self->get_line( '+Enter password', AS_PASSWORD );
 
    return $password;
 }
@@ -28,18 +28,17 @@ sub get_user_password {
 sub set_user_password {
    my ($self, $user_name, $password) = @_;
 
-   $user_name or throw Unspecified, args => [ 'user name' ];
+   $user_name or throw Unspecified, [ 'user name' ];
 
    unless ($password) {
-      $password = $self->get_line
-         ( '+Enter password', NUL, TRUE, undef, FALSE, TRUE );
+      $password = $self->get_line( '+Enter password', AS_PASSWORD );
 
-      my $again = $self->get_line( '+Again', NUL, TRUE, undef, FALSE, TRUE );
+      my $again = $self->get_line( '+Again', AS_PASSWORD );
 
       $password eq $again or throw 'Passwords do not match';
    }
 
-   $password or throw Unspecified, args => [ 'password' ];
+   $password or throw Unspecified, [ 'password' ];
 
    my $data = $self->_read_rc_file; $data->{users}->{ $user_name } = $password;
 

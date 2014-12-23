@@ -1,5 +1,7 @@
 Revision history for App::MCP::Worker
 
+          - Using AS_PASSWORD in user prompts
+          - Shaved throw calls
           - Started logging _run_command errors
           - Added create_job test
           - Job creation API works with new Request object

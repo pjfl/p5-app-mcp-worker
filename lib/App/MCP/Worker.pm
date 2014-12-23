@@ -2,7 +2,7 @@ package App::MCP::Worker;
 
 use 5.010001;
 use namespace::autoclean;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 17 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 18 $ =~ /\d+/gmx );
 
 use Moo;
 use Class::Usul::Constants  qw( EXCEPTION_CLASS FALSE OK SPC TRUE );
@@ -89,7 +89,7 @@ sub create_job : method {
 
    $res->is_success
       or throw 'Session [_1] create job failed code [_2]: [_3]',
-               args => [ $sess_id, $res->code, $message ];
+               [ $sess_id, $res->code, $message ];
 
    $self->info( "SESS[${sess_id}]: ${message}" );
    return OK;
@@ -146,7 +146,7 @@ sub _send_event {
 
          $res->is_success
             or throw 'Run [_1] send event failed code [_2]: [_3]',
-                     args => [ $runid, $res->code, $message ];
+                     [ $runid, $res->code, $message ];
          $self->log->debug( $prefix.$message );
       }
       catch { $self->log->error( $_ ) };
@@ -159,9 +159,8 @@ sub _send_event {
 sub __chdir {
    my $dir = shift;
 
-         $dir or throw Unspecified, args => [ 'directory' ];
-   chdir $dir or throw 'Directory [_1] cannot chdir: [_2]',
-                 args => [ $dir, $OS_ERROR ];
+         $dir or throw Unspecified, [ 'directory' ];
+   chdir $dir or throw 'Directory [_1] cannot chdir: [_2]', [ $dir, $OS_ERROR ];
    return $dir;
 }
 
@@ -177,7 +176,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 17 $ of L<App::MCP::Worker>
+This documents version v0.2.$Rev: 18 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 
