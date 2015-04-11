@@ -32,6 +32,50 @@ has '_transcoder' => is => 'lazy', isa => Object,
 has '_user_agent' => is => 'lazy', isa => Object,
    builder        => sub { LWP::UserAgent->new }, reader => 'user_agent';
 
+# Private methods
+my $_compute_token = sub {
+   my ($self, $username, $password, $res) = @_; my $content = $res->content;
+
+   $res->is_success
+      or throw 'User [_1] authentication failure code [_2]: [_3]',
+               [ $username, $res->code, $content->{message} ];
+
+   my $server_pub_key = base64_decode_ns( $content->{public_key} );
+
+   $self->log->debug( 'Auth server pub key '.(md5_hex $server_pub_key ) );
+
+   $self->srp->client_verify_B( $server_pub_key )
+      or throw 'User [_1] server public key verification failure',
+               [ $username ];
+
+   $self->srp->client_init( $username, $password, $content->{salt} );
+
+   my $token = $self->srp->client_compute_M1;
+
+   $self->log->debug( 'Auth M1 token '.(md5_hex $token) );
+   return base64_encode_ns $token;
+};
+
+my $_decoded_response_to_signed_request = sub {
+   my ($self, $req) = @_; my $res = $self->user_agent->request( $req );
+
+   try   { $res->content( $self->transcoder->decode( $res->content ) ) }
+   catch { $res->content( { message => $res->content } ) };
+
+   return $res;
+};
+
+my $_read_private_key = sub {
+   my ($self, $key_id) = @_; state $cache //= {};
+
+   $key_id //= class2appdir $self->config->appclass;
+
+   my $key     = $cache->{ $key_id }; $key and return $key;
+   my $ssh_dir = $self->config->my_home->catdir( '.ssh' );
+
+   return $cache->{ $key_id } = $ssh_dir->catfile( "${key_id}.priv" )->all;
+};
+
 # Public methods
 sub authenticate_session {
    my ($self, $uri, $opts) = @_;
@@ -49,7 +93,7 @@ sub authenticate_session {
 
    my $pub_key  = base64_encode_ns $raw_key;
    my $res      = $self->get_with_sig( $uri, { public_key => $pub_key } );
-   my $token    = $self->_compute_token( $username, $password, $res );
+   my $token    = $self->$_compute_token( $username, $password, $res );
 
    $res = $self->post_as_json( $uri, { M1_token => $token } );
 
@@ -78,11 +122,11 @@ sub get_with_sig {
    }
 
    my $req    = GET $uri.$query; $req->protocol( 'HTTP/1.1' );
-   my $key    = $self->_read_private_key;
+   my $key    = $self->$_read_private_key;
    my $signer = Authen::HTTP::Signature->new
       ( headers => [ 'request-line' ], key => $key, key_id => hostname, );
 
-   return $self->_decoded_response_to_signed_request( $signer->sign( $req ) );
+   return $self->$_decoded_response_to_signed_request( $signer->sign( $req ) );
 }
 
 sub post_as_json {
@@ -93,63 +137,12 @@ sub post_as_json {
    my $req    = POST $uri, 'Content-SHA512' => $digest->hexdigest,
                            'Content-Type'   => 'application/json',
                            'Content'        => $content;
-   my $key    = $self->_read_private_key;
+   my $key    = $self->$_read_private_key;
    # TODO: Why doest hmac-sha512 not work?
    my $signer = Authen::HTTP::Signature->new
       ( headers => [ 'Content-SHA512' ], key => $key, key_id => hostname, );
 
-   return $self->_decoded_response_to_signed_request( $signer->sign( $req ) );
-}
-
-# Private methods
-sub _compute_token {
-   my ($self, $username, $password, $res) = @_; my $content = $res->content;
-
-   $res->is_success
-      or throw 'User [_1] authentication failure code [_2]: [_3]',
-               [ $username, $res->code, $content->{message} ];
-
-   my $server_pub_key = base64_decode_ns( $content->{public_key} );
-
-   $self->log->debug( 'Auth server pub key '.(md5_hex $server_pub_key ) );
-
-   $self->srp->client_verify_B( $server_pub_key )
-      or throw 'User [_1] server public key verification failure',
-               [ $username ];
-
-   $self->srp->client_init( $username, $password, $content->{salt} );
-
-   my $token = $self->srp->client_compute_M1;
-
-   $self->log->debug( 'Auth M1 token '.(md5_hex $token) );
-   return base64_encode_ns $token;
-}
-
-sub _decoded_response_to_signed_request {
-   my ($self, $req) = @_; my $res = $self->user_agent->request( $req );
-
-   try   { $res->content( $self->transcoder->decode( $res->content ) ) }
-   catch { $res->content( { message => $res->content } ) };
-
-   return $res;
-}
-
-sub _read_private_key {
-   my ($self, $key_id) = @_; state $cache //= {};
-
-   $key_id //= class2appdir $self->config->appclass;
-
-   my $key     = $cache->{ $key_id }; $key and return $key;
-   my $ssh_dir = $self->config->my_home->catdir( '.ssh' );
-
-   return $cache->{ $key_id } = $ssh_dir->catfile( "${key_id}.priv" )->all;
-}
-
-# Private functions
-sub __get_hashed_pw {
-   my $crypted = shift; my @parts = split m{ [\$] }mx, $crypted;
-
-   return substr $parts[ -1 ], 22;
+   return $self->$_decoded_response_to_signed_request( $signer->sign( $req ) );
 }
 
 1;

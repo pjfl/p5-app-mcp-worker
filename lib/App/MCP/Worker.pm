@@ -2,7 +2,7 @@ package App::MCP::Worker;
 
 use 5.010001;
 use namespace::autoclean;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 18 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 19 $ =~ /\d+/gmx );
 
 use Moo;
 use Class::Usul::Constants  qw( EXCEPTION_CLASS FALSE OK SPC TRUE );
@@ -36,26 +36,26 @@ coerce $ServerList, from Str, via { [ split m{ [,] }mx, $_ ] };
 # Public attributes
 option 'job'       => is => 'ro',   isa => HashRef,
    documentation   => 'Keys and values of a job definition in JSON format',
-   default         => sub { {} },  json => TRUE, short => 'j';
+   default         => sub { {} },   json => TRUE, short => 'j';
 
-option 'port'      => is => 'ro',   isa => NonZeroPositiveInt, default => 2012,
+option 'port'      => is => 'ro',   isa => NonZeroPositiveInt,
    documentation   => 'Port number for the remote servers. Defaults to 2012',
-   format          => 'i', short => 'p';
+   default         => 2012,         format => 'i', short => 'p';
 
-option 'protocol'  => is => 'ro',   isa => NonEmptySimpleStr, default => 'http',
+option 'protocol'  => is => 'ro',   isa => NonEmptySimpleStr,
    documentation   => 'Which network protocol to use. Defaults to http',
-   format          => 's', short => 'P';
+   default         => 'http',       format => 's', short => 'P';
 
-option 'servers'   => is => 'ro',   isa => $ServerList, default => 'localhost',
+option 'servers'   => is => 'ro',   isa => $ServerList, coerce => TRUE,
    documentation   => 'List of servers to send response status to',
-   coerce          => $ServerList->coercion, format => 's', short => 's';
+   default         => 'localhost',  format => 's', short => 's';
 
 option 'user_name' => is => 'ro',   isa => NonEmptySimpleStr,
    documentation   => 'Name in the user table and .mcprc file',
-   default         => 'unknown', format => 's', short => 'u';
+   default         => 'unknown',    format => 's', short => 'u';
 
-has 'command'      => is => 'lazy', isa => $ShellCmd, default => 'true',
-   coerce          => $ShellCmd->coercion;
+has 'command'      => is => 'lazy', isa => $ShellCmd, coerce => TRUE,
+   default         => 'true';
 
 has 'directory'    => is => 'ro',   isa => Directory | SimpleStr;
 
@@ -73,57 +73,17 @@ has 'uri_template' => is => 'ro',   isa => HashRef, default => sub { {
 
 with q(App::MCP::Worker::Role::ClientAuth);
 
-# Public methods
-sub create_job : method {
-   my $self    = shift;
-   my $json    = $self->transcoder;
-   my $server  = $self->servers->[ 0 ];
-   my $plate   = $self->uri_template->{authenticate};
-   my $uri     = $self->protocol."://${server}:".$self->port;
-   my $sess    = $self->authenticate_session( $uri, { template => $plate } );
-   my $sess_id = $sess->{id};
-   my $job     = encrypt $sess->{shared_secret}, $json->encode( $self->job );
-      $uri    .= sprintf $self->uri_template->{job}, $sess_id;
-   my $res     = $self->post_as_json( $uri, { job => $job } );
-   my $message = $res->content->{message};
+# Private functions
+my $_chdir = sub {
+   my $dir = shift;
 
-   $res->is_success
-      or throw 'Session [_1] create job failed code [_2]: [_3]',
-               [ $sess_id, $res->code, $message ];
-
-   $self->info( "SESS[${sess_id}]: ${message}" );
-   return OK;
-}
-
-sub dispatch {
-   my $self = shift;
-
-   my $r = $self->run_cmd( [ sub { $self->_run_command } ], { async => TRUE } );
-
-   return $r->out;
-}
-
-sub set_client_password : method {
-   $_[ 0 ]->set_user_password( @{ $_[ 0 ]->extra_argv } ); return OK;
-}
+         $dir or throw Unspecified, [ 'directory' ];
+   chdir $dir or throw 'Directory [_1] cannot chdir: [_2]', [ $dir, $OS_ERROR ];
+   return $dir;
+};
 
 # Private methods
-sub _run_command {
-   my $self = shift; $self->_send_event( 'started' );
-
-   try {
-      $self->directory and __chdir( $self->directory );
-
-      my $r = $self->run_cmd( $self->command, { expected_rv => 255 } );
-
-      $self->_send_event( 'finish', $r );
-   }
-   catch { $self->log->error( $_ ); $self->_send_event( 'terminate' ) };
-
-   return;
-}
-
-sub _send_event {
+my $_send_event = sub {
    my ($self, $transition, $r) = @_;
 
    my $runid  = $self->runid;
@@ -153,15 +113,55 @@ sub _send_event {
    }
 
    return;
+};
+
+my $_run_command = sub {
+   my $self = shift; $self->$_send_event( 'started' );
+
+   try {
+      $self->directory and $_chdir->( $self->directory );
+
+      my $r = $self->run_cmd( $self->command, { expected_rv => 255 } );
+
+      $self->$_send_event( 'finish', $r );
+   }
+   catch { $self->log->error( $_ ); $self->$_send_event( 'terminate' ) };
+
+   return;
+};
+
+# Public methods
+sub create_job : method {
+   my $self    = shift;
+   my $json    = $self->transcoder;
+   my $server  = $self->servers->[ 0 ];
+   my $plate   = $self->uri_template->{authenticate};
+   my $uri     = $self->protocol."://${server}:".$self->port;
+   my $sess    = $self->authenticate_session( $uri, { template => $plate } );
+   my $sess_id = $sess->{id};
+   my $job     = encrypt $sess->{shared_secret}, $json->encode( $self->job );
+      $uri    .= sprintf $self->uri_template->{job}, $sess_id;
+   my $res     = $self->post_as_json( $uri, { job => $job } );
+   my $message = $res->content->{message};
+
+   $res->is_success
+      or throw 'Session [_1] create job failed code [_2]: [_3]',
+               [ $sess_id, $res->code, $message ];
+
+   $self->info( "SESS[${sess_id}]: ${message}" );
+   return OK;
 }
 
-# Private functions
-sub __chdir {
-   my $dir = shift;
+sub dispatch {
+   my $self = shift;
 
-         $dir or throw Unspecified, [ 'directory' ];
-   chdir $dir or throw 'Directory [_1] cannot chdir: [_2]', [ $dir, $OS_ERROR ];
-   return $dir;
+   my $r = $self->run_cmd( [ sub { $self->$_run_command } ], { async => TRUE });
+
+   return $r->out;
+}
+
+sub set_client_password : method {
+   $_[ 0 ]->set_user_password( @{ $_[ 0 ]->extra_argv } ); return OK;
 }
 
 1;
@@ -176,7 +176,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 18 $ of L<App::MCP::Worker>
+This documents version v0.2.$Rev: 19 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 

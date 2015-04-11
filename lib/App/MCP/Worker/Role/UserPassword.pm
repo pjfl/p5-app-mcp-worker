@@ -15,11 +15,37 @@ requires qw( config file get_line loc );
 has 'rc_file' => is => 'lazy', isa => Path, coerce => Path->coercion,
    builder    => sub { $_[ 0 ]->config->my_home->catfile( '.mcprc.json' ) };
 
+# Private methods
+my $_read_rc_file = sub {
+   my $self = shift; $self->rc_file->exists or return { users => {} };
+
+   my $data = $self->file->data_load( paths => [ $self->rc_file ] );
+
+   for my $k (keys %{ $data->{users} }) {
+      my $v = $data->{users}->{ $k }; is_encrypted( $v )
+          and $data->{users}->{ $k } = decrypt_from_config $self->config, $v;
+   }
+
+   return $data;
+};
+
+my $_write_rc_file = sub {
+   my ($self, $data) = @_;
+
+   for my $k (keys %{ $data->{users} }) {
+      my $v = $data->{users}->{ $k }; is_encrypted( $v )
+           or $data->{users}->{ $k } = encrypt_for_config $self->config, $v;
+   }
+
+   $self->file->data_dump( data => $data, path => $self->rc_file, );
+   return;
+};
+
 # Public methods
 sub get_user_password {
    my ($self, $user_name) = @_;
 
-   my $password = $self->_read_rc_file->{users}->{ $user_name }
+   my $password = $self->$_read_rc_file->{users}->{ $user_name }
                || $self->get_line( '+Enter password', AS_PASSWORD );
 
    return $password;
@@ -40,35 +66,9 @@ sub set_user_password {
 
    $password or throw Unspecified, [ 'password' ];
 
-   my $data = $self->_read_rc_file; $data->{users}->{ $user_name } = $password;
+   my $data = $self->$_read_rc_file; $data->{users}->{ $user_name } = $password;
 
-   $self->_write_rc_file( $data );
-   return;
-}
-
-# Private methods
-sub _read_rc_file {
-   my $self = shift; $self->rc_file->exists or return { users => {} };
-
-   my $data = $self->file->data_load( paths => [ $self->rc_file ] );
-
-   for my $k (keys %{ $data->{users} }) {
-      my $v = $data->{users}->{ $k }; is_encrypted( $v )
-          and $data->{users}->{ $k } = decrypt_from_config( $self->config, $v );
-   }
-
-   return $data;
-}
-
-sub _write_rc_file {
-   my ($self, $data) = @_;
-
-   for my $k (keys %{ $data->{users} }) {
-      my $v = $data->{users}->{ $k }; is_encrypted( $v )
-           or $data->{users}->{ $k } = encrypt_for_config( $self->config, $v );
-   }
-
-   $self->file->data_dump( data => $data, path => $self->rc_file, );
+   $self->$_write_rc_file( $data );
    return;
 }
 

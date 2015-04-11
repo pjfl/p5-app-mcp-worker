@@ -1,5 +1,6 @@
 Revision history for App::MCP::Worker
 
+          - Switched to lexical subs
           - Using AS_PASSWORD in user prompts
           - Shaved throw calls
           - Started logging _run_command errors
