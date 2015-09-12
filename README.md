@@ -4,14 +4,15 @@ App::MCP::Worker - Remotely executed worker process
 
 # Version
 
-This documents version v0.2.$Rev: 17 $ of [App::MCP::Worker](https://metacpan.org/pod/App::MCP::Worker)
+This documents version v0.2.$Rev: 19 $ of [App::MCP::Worker](https://metacpan.org/pod/App::MCP::Worker)
 
 # Synopsis
 
     use App::MCP::Worker;
-    # Brief but working code examples
 
 # Description
+
+Remotely executed worker process
 
 # Configuration and Environment
 
@@ -25,15 +26,20 @@ Defines the following attributes;
 - `runid`
 - `servers`
 - `token`
+- `user_name`
 - `uri_template`
 
 # Subroutines/Methods
 
-## create\_job - Creates a new job on an MCP job scheduler
+## `create_job` - Creates a new job on an MCP job scheduler
 
-## set\_client\_password - Stores the clients API password in a local file
+## `dispatch`
+
+## `set_client_password` - Stores the clients API password in a local file
 
 # Diagnostics
+
+None
 
 # Dependencies
 

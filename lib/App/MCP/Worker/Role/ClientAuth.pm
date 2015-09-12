@@ -1,6 +1,5 @@
 package App::MCP::Worker::Role::ClientAuth;
 
-use feature 'state';
 use namespace::autoclean;
 
 use Authen::HTTP::Signature;
@@ -31,6 +30,9 @@ has '_transcoder' => is => 'lazy', isa => Object,
 
 has '_user_agent' => is => 'lazy', isa => Object,
    builder        => sub { LWP::UserAgent->new }, reader => 'user_agent';
+
+# Package variables
+my $private_key_cache = {};
 
 # Private methods
 my $_compute_token = sub {
@@ -66,23 +68,21 @@ my $_decoded_response_to_signed_request = sub {
 };
 
 my $_read_private_key = sub {
-   my ($self, $key_id) = @_; state $cache //= {};
+   my ($self, $key_id) = @_; $key_id //= class2appdir $self->config->appclass;
 
-   $key_id //= class2appdir $self->config->appclass;
-
-   my $key     = $cache->{ $key_id }; $key and return $key;
+   my $key     = $private_key_cache->{ $key_id }; $key and return $key;
    my $ssh_dir = $self->config->my_home->catdir( '.ssh' );
 
-   return $cache->{ $key_id } = $ssh_dir->catfile( "${key_id}.priv" )->all;
+   return $private_key_cache->{ $key_id }
+        = $ssh_dir->catfile( "${key_id}.priv" )->all;
 };
 
 # Public methods
 sub authenticate_session {
-   my ($self, $uri, $opts) = @_;
+   my ($self, $uri, $opts) = @_; $opts //= {};
 
-   $uri or throw Unspecified, args => [ 'uri' ];
-   (is_hashref $opts and $opts->{template})
-      or throw Unspecified, [ 'template' ];
+   $uri or throw Unspecified, [ 'uri' ];
+   $opts->{template} or throw Unspecified, [ 'template' ];
 
    my $username = $opts->{user_name} // $self->user_name;
    my $password = $opts->{password } // $self->get_user_password( $username );
@@ -117,7 +117,7 @@ sub get_with_sig {
    my ($self, $uri, $content) = @_; my $query = NUL;
 
    # TODO: If $uri was_a URI::http[s] then we can use query_form
-   for (keys %{ $content || {} }) {
+   for (keys %{ $content // {} }) {
       $query .= $query ? '&' : '?'; $query .= "${_}=".$content->{ $_ };
    }
 
@@ -151,7 +151,7 @@ __END__
 
 =pod
 
-=encoding utf8
+=encoding utf-8
 
 =head1 Name
 
@@ -166,13 +166,15 @@ App::MCP::Worker::Role::ClientAuth - One-line description of the modules purpose
 
 =head1 Configuration and Environment
 
-Defines the following attributes;
-
-=over 3
-
-=back
+Defines no public attributes
 
 =head1 Subroutines/Methods
+
+=head2 C<authenticate_session>
+
+=head2 C<get_with_sig>
+
+=head2 C<post_as_json>
 
 =head1 Diagnostics
 

@@ -2,13 +2,11 @@ package App::MCP::Worker;
 
 use 5.010001;
 use namespace::autoclean;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 19 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 20 $ =~ /\d+/gmx );
 
-use Moo;
 use Class::Usul::Constants  qw( EXCEPTION_CLASS FALSE OK SPC TRUE );
 use Class::Usul::Crypt      qw( encrypt );
 use Class::Usul::Functions  qw( bson64id pad throw );
-use Class::Usul::Options;
 use Data::Record;
 use English                 qw( -no_match_vars );
 use File::DataClass::Types  qw( ArrayRef Directory HashRef NonEmptySimpleStr
@@ -17,9 +15,11 @@ use Regexp::Common;
 use Try::Tiny;
 use Type::Utils             qw( as coerce from subtype via );
 use Unexpected::Functions   qw( Unspecified );
+use Moo;
+use Class::Usul::Options;
 
-extends q(Class::Usul::Programs);
-with    q(App::MCP::Worker::Role::UserPassword);
+extends 'Class::Usul::Programs';
+with    'App::MCP::Worker::Role::UserPassword';
 
 my $ShellCmd = subtype as ArrayRef;
 
@@ -71,7 +71,7 @@ has 'uri_template' => is => 'ro',   isa => HashRef, default => sub { {
    event           => '/api/event?runid=%s',
    job             => '/api/job?sessionid=%s', } };
 
-with q(App::MCP::Worker::Role::ClientAuth);
+with 'App::MCP::Worker::Role::ClientAuth';
 
 # Private functions
 my $_chdir = sub {
@@ -170,20 +170,23 @@ __END__
 
 =pod
 
+=encoding utf-8
+
 =head1 Name
 
 App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 19 $ of L<App::MCP::Worker>
+This documents version v0.2.$Rev: 20 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 
    use App::MCP::Worker;
-   # Brief but working code examples
 
 =head1 Description
+
+Remotely executed worker process
 
 =head1 Configuration and Environment
 
@@ -207,17 +210,23 @@ Defines the following attributes;
 
 =item C<token>
 
+=item C<user_name>
+
 =item C<uri_template>
 
 =back
 
 =head1 Subroutines/Methods
 
-=head2 create_job - Creates a new job on an MCP job scheduler
+=head2 C<create_job> - Creates a new job on an MCP job scheduler
 
-=head2 set_client_password - Stores the clients API password in a local file
+=head2 C<dispatch>
+
+=head2 C<set_client_password> - Stores the clients API password in a local file
 
 =head1 Diagnostics
+
+None
 
 =head1 Dependencies
 

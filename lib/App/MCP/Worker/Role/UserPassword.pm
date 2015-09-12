@@ -10,7 +10,7 @@ use File::DataClass::Types   qw( Path );
 use Unexpected::Functions    qw( Unspecified );
 use Moo::Role;
 
-requires qw( config file get_line loc );
+requires qw( config file get_line );
 
 has 'rc_file' => is => 'lazy', isa => Path, coerce => Path->coercion,
    builder    => sub { $_[ 0 ]->config->my_home->catfile( '.mcprc.json' ) };
@@ -78,7 +78,7 @@ __END__
 
 =pod
 
-=encoding utf8
+=encoding utf-8
 
 =head1 Name
 

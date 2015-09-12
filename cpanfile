@@ -1,0 +1,39 @@
+requires "Authen::HTTP::Signature" => "0.02";
+requires "Class::Usul" => "v0.51.0";
+requires "Crypt::SRP" => "0.013";
+requires "Data::Record" => "0.02";
+requires "File::DataClass" => "v0.52.0";
+requires "HTTP::Message" => "6.06";
+requires "JSON::MaybeXS" => "1.002002";
+requires "LWP" => "6.08";
+requires "Math::BigInt::GMP" => "1.38";
+requires "Moo" => "1.005000";
+requires "Regexp::Common" => "2013031301";
+requires "Try::Tiny" => "0.22";
+requires "Type::Tiny" => "0.046";
+requires "Unexpected" => "v0.34.0";
+requires "namespace::autoclean" => "0.19";
+requires "perl" => "5.010001";
+
+on 'build' => sub {
+  requires "Module::Build" => "0.4004";
+  requires "version" => "0.88";
+};
+
+on 'test' => sub {
+  requires "File::Spec" => "0";
+  requires "Module::Build" => "0.4004";
+  requires "Module::Metadata" => "0";
+  requires "Sys::Hostname" => "0";
+  requires "Test::Requires" => "0.06";
+  requires "version" => "0.88";
+};
+
+on 'test' => sub {
+  recommends "CPAN::Meta" => "2.120900";
+};
+
+on 'configure' => sub {
+  requires "Module::Build" => "0.4004";
+  requires "version" => "0.88";
+};
