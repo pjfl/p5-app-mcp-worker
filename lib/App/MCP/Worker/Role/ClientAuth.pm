@@ -6,7 +6,7 @@ use Authen::HTTP::Signature;
 use Class::Usul::Constants qw( EXCEPTION_CLASS NUL );
 use Class::Usul::Functions qw( base64_decode_ns base64_encode_ns
                                class2appdir is_hashref throw );
-use Class::Usul::Types     qw( Object );
+use Class::Usul::Types     qw( NonEmptySimpleStr Object );
 use Crypt::SRP;
 use Digest                 qw( );
 use Digest::MD5            qw( md5_hex );
@@ -17,8 +17,13 @@ use Sys::Hostname;
 use Try::Tiny;
 use Unexpected::Functions  qw( Unspecified );
 use Moo::Role;
+use Class::Usul::Options;
 
 requires qw( config get_user_password log user_name );
+
+option 'key_id'   => is => 'ro',   isa => NonEmptySimpleStr,
+   documentation  => 'Name of the private key file. Defaults to app-mcp',
+   default        => 'app-mcp', format => 's', short => 'k';
 
 # Private attributes
 has '_srp'        => is => 'lazy', isa => Object,
@@ -45,6 +50,7 @@ my $_compute_token = sub {
    my $server_pub_key = base64_decode_ns( $content->{public_key} );
 
    $self->log->debug( 'Auth server pub key '.(md5_hex $server_pub_key ) );
+   $self->log->debug( 'Client init '.(md5_hex $username.$content->{salt} ) );
 
    $self->srp->client_verify_B( $server_pub_key )
       or throw 'User [_1] server public key verification failure',
@@ -68,13 +74,12 @@ my $_decoded_response_to_signed_request = sub {
 };
 
 my $_read_private_key = sub {
-   my ($self, $key_id) = @_; $key_id //= class2appdir $self->config->appclass;
-
-   my $key     = $private_key_cache->{ $key_id }; $key and return $key;
+   my $self    = shift;
+   my $key     = $private_key_cache->{ $self->key_id }; $key and return $key;
    my $ssh_dir = $self->config->my_home->catdir( '.ssh' );
 
-   return $private_key_cache->{ $key_id }
-        = $ssh_dir->catfile( "${key_id}.priv" )->all;
+   return $private_key_cache->{ $self->key_id }
+        = $ssh_dir->catfile( $self->key_id.'.priv' )->all;
 };
 
 # Public methods

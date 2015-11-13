@@ -15,7 +15,7 @@ my $prereqs  = {
     'version' => '0.88'
   },
   'requires' => {
-    'Authen::HTTP::Signature' => '0.02',
+    'Authen::HTTP::Signature' => '0.03',
     'Class::Usul' => 'v0.51.0',
     'Crypt::SRP' => '0.013',
     'Data::Record' => '0.02',

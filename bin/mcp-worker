@@ -1,5 +1,4 @@
 #!/usr/bin/env perl
-# @(#)Ident: mcp-worker 2013-10-27 02:21 pjf ;
 
 use strict;
 use warnings;
@@ -10,17 +9,18 @@ use FindBin               qw( $Bin );
 use lib               catdir( $Bin, updir, 'lib' );
 
 BEGIN {
-   my $path = catfile( $Bin, 'worker-localenv' );
+   my $bind = $Bin; $bind =~ m{ \A ([^\$%&\*;<>\`|]+) \z }mx and $bind = $1;
+   my $path = catfile( $bind, 'mcp-localenv' );
 
    -f $path and (do $path or die $EVAL_ERROR || "Path ${path} not done\n");
 }
 
-use version; our $VERSION = qv( sprintf '0.1.%d', q$Rev: 2 $ =~ /\d+/gmx );
-
 use App::MCP::Worker;
 
 exit App::MCP::Worker->new_with_options
-   ( appclass => 'App::MCP', noask => 1 )->run;
+   ( appclass => 'App::MCP::Worker',
+     config   => { prefix => 'mcp' },
+     noask    => 1 )->run;
 
 __END__
 
@@ -52,7 +52,7 @@ Lists the methods available in this program
 
 =head1 VERSION
 
-This documents version v0.1.$Rev: 2 $ of C<mcp-worker>
+This documents version v0.1.$Rev: 21 $ of C<mcp-worker>
 
 =head1 DESCRIPTION
 

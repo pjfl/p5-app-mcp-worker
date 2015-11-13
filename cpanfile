@@ -1,4 +1,4 @@
-requires "Authen::HTTP::Signature" => "0.02";
+requires "Authen::HTTP::Signature" => "0.03";
 requires "Class::Usul" => "v0.51.0";
 requires "Crypt::SRP" => "0.013";
 requires "Data::Record" => "0.02";
