@@ -2,7 +2,7 @@ package App::MCP::Worker;
 
 use 5.010001;
 use namespace::autoclean;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 20 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 22 $ =~ /\d+/gmx );
 
 use Class::Usul::Constants  qw( EXCEPTION_CLASS FALSE OK SPC TRUE );
 use Class::Usul::Crypt      qw( encrypt );
@@ -20,6 +20,7 @@ use Class::Usul::Options;
 
 extends 'Class::Usul::Programs';
 with    'App::MCP::Worker::Role::UserPassword';
+with    'App::MCP::Worker::Role::ClientAuth';
 
 my $ShellCmd = subtype as ArrayRef;
 
@@ -50,10 +51,6 @@ option 'servers'   => is => 'ro',   isa => $ServerList, coerce => TRUE,
    documentation   => 'List of servers to send response status to',
    default         => 'localhost',  format => 's', short => 's';
 
-option 'user_name' => is => 'ro',   isa => NonEmptySimpleStr,
-   documentation   => 'Name in the user table and .mcprc file',
-   default         => 'unknown',    format => 's', short => 'u';
-
 has 'command'      => is => 'lazy', isa => $ShellCmd, coerce => TRUE,
    default         => 'true';
 
@@ -70,8 +67,6 @@ has 'uri_template' => is => 'ro',   isa => HashRef, default => sub { {
    authenticate    => '/api/authenticate/%s',
    event           => '/api/event?runid=%s',
    job             => '/api/job?sessionid=%s', } };
-
-with 'App::MCP::Worker::Role::ClientAuth';
 
 # Private functions
 my $_chdir = sub {
@@ -178,7 +173,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 20 $ of L<App::MCP::Worker>
+This documents version v0.2.$Rev: 22 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 
@@ -209,8 +204,6 @@ Defines the following attributes;
 =item C<servers>
 
 =item C<token>
-
-=item C<user_name>
 
 =item C<uri_template>
 

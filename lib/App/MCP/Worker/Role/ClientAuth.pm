@@ -19,22 +19,26 @@ use Unexpected::Functions  qw( Unspecified );
 use Moo::Role;
 use Class::Usul::Options;
 
-requires qw( config get_user_password log user_name );
+requires qw( config get_user_password log );
 
-option 'key_id'   => is => 'ro',   isa => NonEmptySimpleStr,
-   documentation  => 'Name of the private key file. Defaults to app-mcp',
-   default        => 'app-mcp', format => 's', short => 'k';
+option 'key_id'    => is => 'ro',   isa => NonEmptySimpleStr,
+   documentation   => 'Name of the private key file. Defaults to app-mcp',
+   default         => 'app-mcp', format => 's', short => 'k';
+
+option 'user_name' => is => 'ro',   isa => NonEmptySimpleStr,
+   documentation   => 'Name in the user table and .mcprc file',
+   default         => 'unknown', format => 's', short => 'u';
 
 # Private attributes
-has '_srp'        => is => 'lazy', isa => Object,
-   builder        => sub { Crypt::SRP->new( 'RFC5054-2048bit', 'SHA512' ) },
-   reader         => 'srp';
+has '_srp'         => is => 'lazy', isa => Object,
+   builder         => sub { Crypt::SRP->new( 'RFC5054-2048bit', 'SHA512' ) },
+   reader          => 'srp';
 
-has '_transcoder' => is => 'lazy', isa => Object,
-   builder        => sub { JSON::MaybeXS->new  }, reader => 'transcoder';
+has '_transcoder'  => is => 'lazy', isa => Object,
+   builder         => sub { JSON::MaybeXS->new  }, reader => 'transcoder';
 
-has '_user_agent' => is => 'lazy', isa => Object,
-   builder        => sub { LWP::UserAgent->new }, reader => 'user_agent';
+has '_user_agent'  => is => 'lazy', isa => Object,
+   builder         => sub { LWP::UserAgent->new }, reader => 'user_agent';
 
 # Package variables
 my $private_key_cache = {};
@@ -171,7 +175,15 @@ App::MCP::Worker::Role::ClientAuth - One-line description of the modules purpose
 
 =head1 Configuration and Environment
 
-Defines no public attributes
+Defines the following attributes
+
+=over 3
+
+=item C<key_id>
+
+=item C<user_name>
+
+=back
 
 =head1 Subroutines/Methods
 
