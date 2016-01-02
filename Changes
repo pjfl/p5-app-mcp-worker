@@ -1,5 +1,8 @@
 Revision history for App::MCP::Worker
 
+          - Dropped dependency on Regexp::Common
+            That module has had installation and indexing problems for
+            some time 249f54a8-b08e-11e5-9304-6ec2af845ad4 and RT#110771
           - Moved user_name attribute to ClientAuth
           - Update dependency version
           - Toolchain update

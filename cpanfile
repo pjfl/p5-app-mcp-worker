@@ -8,7 +8,6 @@ requires "JSON::MaybeXS" => "1.002002";
 requires "LWP" => "6.08";
 requires "Math::BigInt::GMP" => "1.38";
 requires "Moo" => "1.005000";
-requires "Regexp::Common" => "2013031301";
 requires "Try::Tiny" => "0.22";
 requires "Type::Tiny" => "0.046";
 requires "Unexpected" => "v0.34.0";

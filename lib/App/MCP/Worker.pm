@@ -2,16 +2,15 @@ package App::MCP::Worker;
 
 use 5.010001;
 use namespace::autoclean;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 22 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 23 $ =~ /\d+/gmx );
 
-use Class::Usul::Constants  qw( EXCEPTION_CLASS FALSE OK SPC TRUE );
+use Class::Usul::Constants  qw( EXCEPTION_CLASS FALSE OK QUOTED_RE SPC TRUE );
 use Class::Usul::Crypt      qw( encrypt );
 use Class::Usul::Functions  qw( bson64id pad throw );
 use Data::Record;
 use English                 qw( -no_match_vars );
 use File::DataClass::Types  qw( ArrayRef Directory HashRef NonEmptySimpleStr
                                 NonZeroPositiveInt SimpleStr Str );
-use Regexp::Common;
 use Try::Tiny;
 use Type::Utils             qw( as coerce from subtype via );
 use Unexpected::Functions   qw( Unspecified );
@@ -25,7 +24,7 @@ with    'App::MCP::Worker::Role::ClientAuth';
 my $ShellCmd = subtype as ArrayRef;
 
 coerce $ShellCmd, from Str, via {
-   my $split_on_space = { split => SPC, unless => $RE{quoted} };
+   my $split_on_space = { split => SPC, unless => QUOTED_RE };
 
    return [ Data::Record->new( $split_on_space )->records( $_ ) ];
 };
@@ -130,9 +129,9 @@ sub create_job : method {
    my $self    = shift;
    my $json    = $self->transcoder;
    my $server  = $self->servers->[ 0 ];
-   my $plate   = $self->uri_template->{authenticate};
+   my $tplate  = $self->uri_template->{authenticate};
    my $uri     = $self->protocol."://${server}:".$self->port;
-   my $sess    = $self->authenticate_session( $uri, { template => $plate } );
+   my $sess    = $self->authenticate_session( $uri, { template => $tplate } );
    my $sess_id = $sess->{id};
    my $job     = encrypt $sess->{shared_secret}, $json->encode( $self->job );
       $uri    .= sprintf $self->uri_template->{job}, $sess_id;
@@ -173,7 +172,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 22 $ of L<App::MCP::Worker>
+This documents version v0.2.$Rev: 23 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 

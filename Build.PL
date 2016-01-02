@@ -25,7 +25,6 @@ my $prereqs  = {
     'LWP' => '6.08',
     'Math::BigInt::GMP' => '1.38',
     'Moo' => '1.005000',
-    'Regexp::Common' => '2013031301',
     'Try::Tiny' => '0.22',
     'Type::Tiny' => '0.046',
     'Unexpected' => 'v0.34.0',
