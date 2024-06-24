@@ -4,7 +4,7 @@ App::MCP::Worker - Remotely executed worker process
 
 # Version
 
-This documents version v0.2.$Rev: 22 $ of [App::MCP::Worker](https://metacpan.org/pod/App::MCP::Worker)
+This documents version v0.2.$Rev: 23 $ of [App::MCP::Worker](https://metacpan.org/pod/App%3A%3AMCP%3A%3AWorker)
 
 # Synopsis
 
@@ -43,20 +43,20 @@ None
 # Dependencies
 
 You need to install the GNU MP library (`libgmp3-dev`) which is required by
-[Crypt::SRP](https://metacpan.org/pod/Crypt::SRP) to install this distribution
+[Crypt::SRP](https://metacpan.org/pod/Crypt%3A%3ASRP) to install this distribution
 
-- [namespace::autoclean](https://metacpan.org/pod/namespace::autoclean)
-- [Authen::HTTP::Signature](https://metacpan.org/pod/Authen::HTTP::Signature)
-- [Class::Usul](https://metacpan.org/pod/Class::Usul)
-- [Crypt::SRP](https://metacpan.org/pod/Crypt::SRP)
-- [Data::Record](https://metacpan.org/pod/Data::Record)
-- [File::DataClass](https://metacpan.org/pod/File::DataClass)
-- [JSON::MaybeXS](https://metacpan.org/pod/JSON::MaybeXS)
-- [LWP::UserAgent](https://metacpan.org/pod/LWP::UserAgent)
+- [namespace::autoclean](https://metacpan.org/pod/namespace%3A%3Aautoclean)
+- [Authen::HTTP::Signature](https://metacpan.org/pod/Authen%3A%3AHTTP%3A%3ASignature)
+- [Class::Usul](https://metacpan.org/pod/Class%3A%3AUsul)
+- [Crypt::SRP](https://metacpan.org/pod/Crypt%3A%3ASRP)
+- [Data::Record](https://metacpan.org/pod/Data%3A%3ARecord)
+- [File::DataClass](https://metacpan.org/pod/File%3A%3ADataClass)
+- [JSON::MaybeXS](https://metacpan.org/pod/JSON%3A%3AMaybeXS)
+- [LWP::UserAgent](https://metacpan.org/pod/LWP%3A%3AUserAgent)
 - [Moo](https://metacpan.org/pod/Moo)
-- [Regexp::Common](https://metacpan.org/pod/Regexp::Common)
-- [Try::Tiny](https://metacpan.org/pod/Try::Tiny)
-- [Type::Tiny](https://metacpan.org/pod/Type::Tiny)
+- [Regexp::Common](https://metacpan.org/pod/Regexp%3A%3ACommon)
+- [Try::Tiny](https://metacpan.org/pod/Try%3A%3ATiny)
+- [Type::Tiny](https://metacpan.org/pod/Type%3A%3ATiny)
 - [Unexpected](https://metacpan.org/pod/Unexpected)
 
 # Incompatibilities

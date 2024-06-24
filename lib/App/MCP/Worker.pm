@@ -1,8 +1,7 @@
 package App::MCP::Worker;
 
 use 5.010001;
-use namespace::autoclean;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 23 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 24 $ =~ /\d+/gmx );
 
 use Class::Usul::Constants  qw( EXCEPTION_CLASS FALSE OK QUOTED_RE SPC TRUE );
 use Class::Usul::Crypt      qw( encrypt );
@@ -26,7 +25,7 @@ my $ShellCmd = subtype as ArrayRef;
 coerce $ShellCmd, from Str, via {
    my $split_on_space = { split => SPC, unless => QUOTED_RE };
 
-   return [ Data::Record->new( $split_on_space )->records( $_ ) ];
+   return [ Data::Record->new($split_on_space)->records($_) ];
 };
 
 my $ServerList = subtype as ArrayRef;
@@ -62,101 +61,121 @@ has 'runid'        => is => 'ro',   isa => NonEmptySimpleStr,
 
 has 'token'        => is => 'ro',   isa => SimpleStr;
 
-has 'uri_template' => is => 'ro',   isa => HashRef, default => sub { {
-   authenticate    => '/api/authenticate/%s',
-   event           => '/api/event?runid=%s',
-   job             => '/api/job?sessionid=%s', } };
-
-# Private functions
-my $_chdir = sub {
-   my $dir = shift;
-
-         $dir or throw Unspecified, [ 'directory' ];
-   chdir $dir or throw 'Directory [_1] cannot chdir: [_2]', [ $dir, $OS_ERROR ];
-   return $dir;
-};
-
-# Private methods
-my $_send_event = sub {
-   my ($self, $transition, $r) = @_;
-
-   my $runid  = $self->runid;
-   my $json   = $self->transcoder;
-   my $event  = { job_id => $self->job_id, pid        => $PID,
-                  runid  => $runid,        transition => $transition, };
-   my $prefix = (pad uc $transition, 9, SPC, 'left')."[${runid}]: ";
-   my $format = $self->protocol."://%s:".$self->port
-                .sprintf $self->uri_template->{event}, $runid;
-
-   $r and $event->{rv} = $r->rv;
-   $self->log->debug( $prefix.($r ? 'Rv '.$r->rv : "Pid ${PID}") );
-   $event = encrypt $self->token, $json->encode( $event );
-
-   for my $server (@{ $self->servers }) {
-      try {
-         my $uri     = sprintf $format, $server;
-         my $res     = $self->post_as_json( $uri, { event => $event } );
-         my $message = $res->content->{message};
-
-         $res->is_success
-            or throw 'Run [_1] send event failed code [_2]: [_3]',
-                     [ $runid, $res->code, $message ];
-         $self->log->debug( $prefix.$message );
-      }
-      catch { $self->log->error( $_ ) };
+has 'uri_template' => is => 'ro',   isa => HashRef, default => sub {
+   return {
+      authenticate  => '/api/worker/%s/authenticate',
+      event         => '/api/worker/%s/create_event',
+      exchange_keys => '/api/worker/%s/exchange_keys',
+      job           => '/api/worker/%s/create_job',
    }
-
-   return;
-};
-
-my $_run_command = sub {
-   my $self = shift; $self->$_send_event( 'started' );
-
-   try {
-      $self->directory and $_chdir->( $self->directory );
-
-      my $r = $self->run_cmd( $self->command, { expected_rv => 255 } );
-
-      $self->$_send_event( 'finish', $r );
-   }
-   catch { $self->log->error( $_ ); $self->$_send_event( 'terminate' ) };
-
-   return;
 };
 
 # Public methods
 sub create_job : method {
    my $self    = shift;
    my $json    = $self->transcoder;
-   my $server  = $self->servers->[ 0 ];
-   my $tplate  = $self->uri_template->{authenticate};
-   my $uri     = $self->protocol."://${server}:".$self->port;
-   my $sess    = $self->authenticate_session( $uri, { template => $tplate } );
+   my $server  = $self->servers->[0];
+   my $tplate  = $self->uri_template;
+   my $uri     = $self->protocol."://${server}:" . $self->port;
+   my $sess    = $self->authenticate_session($uri, { template => $tplate });
    my $sess_id = $sess->{id};
-   my $job     = encrypt $sess->{shared_secret}, $json->encode( $self->job );
+   my $job     = encrypt $sess->{shared_secret}, $json->encode($self->job);
       $uri    .= sprintf $self->uri_template->{job}, $sess_id;
-   my $res     = $self->post_as_json( $uri, { job => $job } );
+   my $res     = $self->post_as_json($uri, { job => $job });
    my $message = $res->content->{message};
 
-   $res->is_success
-      or throw 'Session [_1] create job failed code [_2]: [_3]',
-               [ $sess_id, $res->code, $message ];
+   throw 'Session [_1] create job failed code [_2]: [_3]',
+      [ $sess_id, $res->code, $message ] unless $res->is_success;
 
-   $self->info( "SESS[${sess_id}]: ${message}" );
+   $self->info("SESS[${sess_id}]: ${message}");
    return OK;
 }
 
 sub dispatch {
    my $self = shift;
 
-   my $r = $self->run_cmd( [ sub { $self->$_run_command } ], { async => TRUE });
+   my $r = $self->run_cmd([ sub { $self->_run_command } ], { async => TRUE });
 
    return $r->out;
 }
 
 sub set_client_password : method {
-   $_[ 0 ]->set_user_password( @{ $_[ 0 ]->extra_argv } ); return OK;
+   my $self = shift;
+
+   $self->set_user_password(@{$self->extra_argv});
+   return OK;
 }
+
+# Private methods
+sub _send_event {
+   my ($self, $transition, $r) = @_;
+
+   my $runid  = $self->runid;
+   my $json   = $self->transcoder;
+   my $event  = {
+      job_id     => $self->job_id,
+      pid        => $PID,
+      runid      => $runid,
+      transition => $transition,
+   };
+   my $prefix = (pad uc $transition, 9, SPC, 'left') . "[${runid}]: ";
+   my $format = $self->protocol . "://%s:" . $self->port
+              . sprintf $self->uri_template->{event}, $runid;
+
+   $event->{rv} = $r->rv if $r;
+
+   $self->log->debug($prefix . ($r ? 'Rv '.$r->rv : "Pid ${PID}"));
+   $event = encrypt $self->token, $json->encode($event);
+
+   for my $server (@{$self->servers}) {
+      try {
+         my $uri     = sprintf $format, $server;
+         my $res     = $self->post_as_json($uri, { event => $event });
+         my $message = $res->content->{message};
+
+         throw 'Run [_1] send event failed code [_2]: [_3]',
+            [ $runid, $res->code, $message ] unless $res->is_success;
+
+         $self->log->debug($prefix . $message);
+      }
+      catch { $self->log->error($_) };
+   }
+
+   return;
+}
+
+sub _run_command {
+   my $self = shift;
+
+   $self->_send_event('started');
+
+   try {
+      _chdir($self->directory) if $self->directory;
+
+      my $r = $self->run_cmd($self->command, { expected_rv => 255 });
+
+      $self->_send_event('finish', $r);
+   }
+   catch {
+      $self->log->error($_);
+      $self->_send_event('terminate');
+   };
+
+   return;
+}
+
+# Private functions
+sub _chdir {
+   my $dir = shift;
+
+   throw Unspecified, ['directory'] unless $dir;
+   throw 'Directory [_1] cannot chdir: [_2]', [$dir, $OS_ERROR]
+      unless chdir $dir;
+
+   return $dir;
+}
+
+use namespace::autoclean;
 
 1;
 
@@ -172,7 +191,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 23 $ of L<App::MCP::Worker>
+This documents version v0.2.$Rev: 24 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 

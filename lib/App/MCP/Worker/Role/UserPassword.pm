@@ -1,7 +1,5 @@
 package App::MCP::Worker::Role::UserPassword;
 
-use namespace::autoclean;
-
 use Class::Usul::Constants   qw( AS_PASSWORD EXCEPTION_CLASS FALSE NUL TRUE );
 use Class::Usul::Crypt::Util qw( decrypt_from_config encrypt_for_config
                                  is_encrypted );
@@ -12,31 +10,21 @@ use Moo::Role;
 
 requires qw( config file get_line );
 
-has 'rc_file' => is => 'lazy', isa => Path, coerce => TRUE,
-   builder    => sub { $_[ 0 ]->config->my_home->catfile( '.mcprc.json' ) };
-
-# Private methods
-my $_read_rc_file = sub {
-   my $self = shift; $self->rc_file->exists or return { users => {} };
-
-   return $self->file->data_load( paths => [ $self->rc_file ] );
-};
-
-my $_write_rc_file = sub {
-   my ($self, $data) = @_;
-
-   return $self->file->data_dump( data => $data, path => $self->rc_file, );
-};
+has 'rc_file' =>
+   is      => 'lazy',
+   isa     => Path,
+   coerce  => TRUE,
+   default => sub { shift->config->my_home->catfile('.mcprc.json') };
 
 # Public methods
 sub get_user_password {
    my ($self, $user_name) = @_;
 
-   my $password = $self->$_read_rc_file->{users}->{ $user_name }
-               // $self->get_line( '+Enter password', AS_PASSWORD );
+   my $password = $self->_read_rc_file->{users}->{$user_name}
+               // $self->get_line('+Enter password', AS_PASSWORD);
 
-   $password and is_encrypted( $password )
-             and $password = decrypt_from_config $self->config, $password;
+   $password = decrypt_from_config $self->config, $password
+      if $password and is_encrypted($password);
 
    return $password;
 }
@@ -44,25 +32,43 @@ sub get_user_password {
 sub set_user_password {
    my ($self, $user_name, $password) = @_;
 
-   $user_name or throw Unspecified, [ 'user name' ];
+   throw Unspecified, ['user name'] unless $user_name;
 
    unless ($password) {
-      $password = $self->get_line( '+Enter password', AS_PASSWORD );
+      $password = $self->get_line('+Enter password', AS_PASSWORD);
 
-      my $again = $self->get_line( '+Again', AS_PASSWORD );
+      my $again = $self->get_line('+Again', AS_PASSWORD);
 
-      $password eq $again or throw 'Passwords do not match';
+      throw 'Passwords do not match' unless $password eq $again;
    }
 
-   $password or throw Unspecified, [ 'password' ];
+   throw Unspecified, ['password'] unless $password;
 
-   my $data = $self->$_read_rc_file;
+   my $data = $self->_read_rc_file;
 
-   $data->{users}->{ $user_name } = is_encrypted( $password )
+   $data->{users}->{$user_name} = is_encrypted($password)
       ? $password : encrypt_for_config $self->config, $password;
-   $self->$_write_rc_file( $data );
+
+   $self->_write_rc_file($data);
    return;
 }
+
+# Private methods
+sub _read_rc_file {
+   my $self = shift;
+
+   return { users => {} } unless $self->rc_file->exists;
+
+   return $self->file->data_load(paths => [$self->rc_file]);
+}
+
+sub _write_rc_file {
+   my ($self, $data) = @_;
+
+   return $self->file->data_dump(data => $data, path => $self->rc_file);
+}
+
+use namespace::autoclean;
 
 1;
 
