@@ -1,5 +1,6 @@
 Revision history for App::MCP::Worker
 
+          - Removed Class::Usul dependency
           - Updated code and default api paths
           - Dropped dependency on Regexp::Common
             That module has had installation and indexing problems for

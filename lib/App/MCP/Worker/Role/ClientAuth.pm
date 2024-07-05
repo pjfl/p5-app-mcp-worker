@@ -1,23 +1,21 @@
 package App::MCP::Worker::Role::ClientAuth;
 
-use namespace::autoclean;
-
-use Class::Usul::Constants qw( EXCEPTION_CLASS NUL );
-use HTTP::Request::Common  qw( GET POST );
-use Class::Usul::Types     qw( NonEmptySimpleStr Object );
-use Class::Usul::Functions qw( base64_decode_ns base64_encode_ns
-                               class2appdir is_hashref throw );
-use Digest                 qw( );
-use Digest::MD5            qw( md5_hex );
-use JSON::MaybeXS          qw( );
-use Unexpected::Functions  qw( Unspecified );
+use Class::Usul::Cmd::Constants qw( EXCEPTION_CLASS NUL );
+use HTTP::Request::Common       qw( GET POST );
+use Unexpected::Types           qw( NonEmptySimpleStr Object );
+use Digest                      qw( );
+use Digest::MD5                 qw( md5_hex );
+use JSON::MaybeXS               qw( );
+use MIME::Base64                qw( decode_base64 encode_base64 );
+use Ref::Util                   qw( is_hashref );
+use Unexpected::Functions       qw( throw Unspecified );
 use Authen::HTTP::Signature;
 use Crypt::SRP;
 use LWP::UserAgent;
 use Sys::Hostname;
 use Try::Tiny;
 use Moo::Role;
-use Class::Usul::Options;
+use Class::Usul::Cmd::Options;
 
 requires qw( config get_user_password log );
 
@@ -58,7 +56,7 @@ sub authenticate_session {
    $self->log->debug('Auth pubic key ' . (md5_hex $raw_key));
 
    my $keys_uri = $uri . sprintf $opts->{template}->{exchange_keys}, $username;
-   my $pub_key  = base64_encode_ns $raw_key;
+   my $pub_key  = encode_base64 $raw_key;
    my $res      = $self->get_with_sig($keys_uri, { public_key => $pub_key });
    my $token    = $self->_compute_token($username, $password, $res);
    my $auth_uri = $uri . sprintf $opts->{template}->{authenticate}, $username;
@@ -71,11 +69,11 @@ sub authenticate_session {
       [$username, $res->code, $content->{message}] unless $res->is_success;
 
    throw 'User [_1] M2 token verification failure', [$username]
-      unless $self->srp->client_verify_M2(base64_decode_ns $content->{M2_token});
+      unless $self->srp->client_verify_M2(decode_base64 $content->{M2_token});
 
    $self->log->debug("User ${username} Session-Id " . $content->{id});
 
-   my $shared_secret = base64_encode_ns $self->srp->get_secret_K;
+   my $shared_secret = encode_base64 $self->srp->get_secret_K;
 
    return { id => $content->{id}, shared_secret => $shared_secret };
 }
@@ -132,7 +130,7 @@ sub _compute_token {
    throw 'User [_1] authentication failure code [_2]: [_3]',
       [$username, $res->code, $content->{message}] unless $res->is_success;
 
-   my $server_pub_key = base64_decode_ns($content->{public_key});
+   my $server_pub_key = decode_base64($content->{public_key});
 
    $self->log->debug('Auth server pub key ' . (md5_hex $server_pub_key));
    $self->log->debug('Client init ' . (md5_hex $username.$content->{salt}));
@@ -145,7 +143,7 @@ sub _compute_token {
    my $token = $self->srp->client_compute_M1;
 
    $self->log->debug('Auth M1 token ' . (md5_hex $token));
-   return base64_encode_ns $token;
+   return encode_base64 $token;
 }
 
 sub _decoded_response_to_signed_request {
@@ -170,6 +168,8 @@ sub _read_private_key {
    return $private_key_cache->{$self->key_id}
         = $ssh_dir->catfile($self->key_id . '.priv')->all;
 }
+
+use namespace::autoclean;
 
 1;
 
@@ -216,7 +216,7 @@ Defines the following attributes
 
 =over 3
 
-=item L<Class::Usul>
+=item L<Class::Usul::Cmd>
 
 =back
 

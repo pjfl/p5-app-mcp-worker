@@ -1,22 +1,25 @@
 package App::MCP::Worker;
 
 use 5.010001;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 24 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 25 $ =~ /\d+/gmx );
 
-use Class::Usul::Constants  qw( EXCEPTION_CLASS FALSE OK QUOTED_RE SPC TRUE );
-use Class::Usul::Crypt      qw( encrypt );
-use Class::Usul::Functions  qw( bson64id pad throw );
+use Class::Usul::Cmd::Constants  qw( EXCEPTION_CLASS FALSE OK QUOTED_RE SPC
+                                     TRUE );
+use File::DataClass::Types       qw( ArrayRef Directory HashRef
+                                     NonEmptySimpleStr NonZeroPositiveInt
+                                     SimpleStr Str );
+use Web::ComposableRequest::Util qw( bson64id );
+use Class::Usul::Cmd::Util       qw( encrypt pad );
+use English                      qw( -no_match_vars );
+use Type::Utils                  qw( as coerce from subtype via );
+use Unexpected::Functions        qw( throw Unspecified );
+use App::MCP::Worker::Config;
 use Data::Record;
-use English                 qw( -no_match_vars );
-use File::DataClass::Types  qw( ArrayRef Directory HashRef NonEmptySimpleStr
-                                NonZeroPositiveInt SimpleStr Str );
 use Try::Tiny;
-use Type::Utils             qw( as coerce from subtype via );
-use Unexpected::Functions   qw( Unspecified );
 use Moo;
-use Class::Usul::Options;
+use Class::Usul::Cmd::Options;
 
-extends 'Class::Usul::Programs';
+extends 'Class::Usul::Cmd';
 with    'App::MCP::Worker::Role::UserPassword';
 with    'App::MCP::Worker::Role::ClientAuth';
 
@@ -68,6 +71,16 @@ has 'uri_template' => is => 'ro',   isa => HashRef, default => sub {
       exchange_keys => '/api/worker/%s/exchange_keys',
       job           => '/api/worker/%s/create_job',
    }
+};
+
+around 'BUILDARGS' => sub {
+   my ($orig, $self, @args) = @_;
+
+   my $attr = $orig->($self, @args);
+
+   $attr->{config} //= App::MCP::Worker::Config->new();
+
+   return $attr;
 };
 
 # Public methods
@@ -191,7 +204,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 24 $ of L<App::MCP::Worker>
+This documents version v0.2.$Rev: 25 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 
@@ -250,7 +263,7 @@ L<Crypt::SRP> to install this distribution
 
 =item L<Authen::HTTP::Signature>
 
-=item L<Class::Usul>
+=item L<Class::Usul::Cmd>
 
 =item L<Crypt::SRP>
 

@@ -17,10 +17,7 @@ BEGIN {
 
 use App::MCP::Worker;
 
-exit App::MCP::Worker->new_with_options
-   ( appclass => 'App::MCP::Worker',
-     config   => { prefix => 'mcp' },
-     noask    => 1 )->run;
+exit App::MCP::Worker->new_with_options()->run;
 
 __END__
 
@@ -52,7 +49,7 @@ Lists the methods available in this program
 
 =head1 VERSION
 
-This documents version v0.1.$Rev: 24 $ of C<mcp-worker>
+This documents version v0.1.$Rev: 25 $ of C<mcp-worker>
 
 =head1 DESCRIPTION
 

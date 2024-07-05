@@ -1,14 +1,14 @@
 package App::MCP::Worker::Role::UserPassword;
 
-use Class::Usul::Constants   qw( AS_PASSWORD EXCEPTION_CLASS FALSE NUL TRUE );
-use Class::Usul::Crypt::Util qw( decrypt_from_config encrypt_for_config
-                                 is_encrypted );
-use Class::Usul::Functions   qw( throw );
-use File::DataClass::Types   qw( Path );
-use Unexpected::Functions    qw( Unspecified );
+use Class::Usul::Cmd::Constants qw( AS_PASSWORD EXCEPTION_CLASS FALSE NUL
+                                    SECRET TRUE );
+use Class::Usul::Cmd::Util      qw( decrypt encrypt );
+use File::DataClass::Types      qw( Path );
+use Unexpected::Functions       qw( throw Unspecified );
+use File::DataClass::Schema;
 use Moo::Role;
 
-requires qw( config file get_line );
+requires qw( config get_line );
 
 has 'rc_file' =>
    is      => 'lazy',
@@ -16,15 +16,21 @@ has 'rc_file' =>
    coerce  => TRUE,
    default => sub { shift->config->my_home->catfile('.mcprc.json') };
 
+has '_file_schema' =>
+   is      => 'lazy',
+   default => sub { File::DataClass::Schema->new(storage_class => 'Any') };
+
 # Public methods
 sub get_user_password {
    my ($self, $user_name) = @_;
 
-   my $password = $self->_read_rc_file->{users}->{$user_name}
-               // $self->get_line('+Enter password', AS_PASSWORD);
+   throw Unspecified, ['user name'] unless $user_name;
 
-   $password = decrypt_from_config $self->config, $password
-      if $password and is_encrypted($password);
+   my $data     = $self->_local_config;
+   my $password = $data->{users}->{$user_name};
+
+   if ($password) { $password = decrypt SECRET, $password }
+   else { $password = $self->get_line('+Enter password', AS_PASSWORD) };
 
    return $password;
 }
@@ -44,28 +50,30 @@ sub set_user_password {
 
    throw Unspecified, ['password'] unless $password;
 
-   my $data = $self->_read_rc_file;
+   my $data = $self->_local_config;
 
-   $data->{users}->{$user_name} = is_encrypted($password)
-      ? $password : encrypt_for_config $self->config, $password;
+   $data->{users}->{$user_name} = encrypt SECRET, $password;
 
-   $self->_write_rc_file($data);
+   $self->_local_config($data);
+   $self->info('Updated user password', { name => 'Worker.set_user_password' });
    return;
 }
 
 # Private methods
-sub _read_rc_file {
-   my $self = shift;
-
-   return { users => {} } unless $self->rc_file->exists;
-
-   return $self->file->data_load(paths => [$self->rc_file]);
-}
-
-sub _write_rc_file {
+sub _local_config {
    my ($self, $data) = @_;
 
-   return $self->file->data_dump(data => $data, path => $self->rc_file);
+   my $path = $self->rc_file;
+   my $default = { users => {} };
+
+   if ($data) {
+      $self->_file_schema->dump({ path => $path->assert, data => $data });
+      return $data;
+   }
+
+   return $self->_file_schema->load($path) // $default if $path->exists;
+
+   return $default;
 }
 
 use namespace::autoclean;
@@ -109,7 +117,7 @@ Defines the following attributes;
 
 =over 3
 
-=item L<Class::Usul>
+=item L<Class::Usul::Cmd>
 
 =back
 

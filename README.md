@@ -4,7 +4,7 @@ App::MCP::Worker - Remotely executed worker process
 
 # Version
 
-This documents version v0.2.$Rev: 23 $ of [App::MCP::Worker](https://metacpan.org/pod/App%3A%3AMCP%3A%3AWorker)
+This documents version v0.2.$Rev: 24 $ of [App::MCP::Worker](https://metacpan.org/pod/App%3A%3AMCP%3A%3AWorker)
 
 # Synopsis
 
@@ -47,7 +47,7 @@ You need to install the GNU MP library (`libgmp3-dev`) which is required by
 
 - [namespace::autoclean](https://metacpan.org/pod/namespace%3A%3Aautoclean)
 - [Authen::HTTP::Signature](https://metacpan.org/pod/Authen%3A%3AHTTP%3A%3ASignature)
-- [Class::Usul](https://metacpan.org/pod/Class%3A%3AUsul)
+- [Class::Usul::Cmd](https://metacpan.org/pod/Class%3A%3AUsul%3A%3ACmd)
 - [Crypt::SRP](https://metacpan.org/pod/Crypt%3A%3ASRP)
 - [Data::Record](https://metacpan.org/pod/Data%3A%3ARecord)
 - [File::DataClass](https://metacpan.org/pod/File%3A%3ADataClass)
