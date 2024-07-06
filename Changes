@@ -1,5 +1,6 @@
 Revision history for App::MCP::Worker
 
+          - Encrypt/decrypt of user password uses default
           - Removed Class::Usul dependency
           - Updated code and default api paths
           - Dropped dependency on Regexp::Common

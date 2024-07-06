@@ -4,7 +4,7 @@ App::MCP::Worker - Remotely executed worker process
 
 # Version
 
-This documents version v0.2.$Rev: 24 $ of [App::MCP::Worker](https://metacpan.org/pod/App%3A%3AMCP%3A%3AWorker)
+This documents version v0.2.$Rev: 25 $ of [App::MCP::Worker](https://metacpan.org/pod/App%3A%3AMCP%3A%3AWorker)
 
 # Synopsis
 

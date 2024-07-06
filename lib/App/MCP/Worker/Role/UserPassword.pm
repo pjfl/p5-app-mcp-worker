@@ -1,9 +1,8 @@
 package App::MCP::Worker::Role::UserPassword;
 
-use Class::Usul::Cmd::Constants qw( AS_PASSWORD EXCEPTION_CLASS FALSE NUL
-                                    SECRET TRUE );
-use Class::Usul::Cmd::Util      qw( decrypt encrypt );
+use Class::Usul::Cmd::Constants qw( AS_PASSWORD EXCEPTION_CLASS FALSE NUL TRUE);
 use File::DataClass::Types      qw( Path );
+use Class::Usul::Cmd::Util      qw( decrypt encrypt );
 use Unexpected::Functions       qw( throw Unspecified );
 use File::DataClass::Schema;
 use Moo::Role;
@@ -29,7 +28,7 @@ sub get_user_password {
    my $data     = $self->_local_config;
    my $password = $data->{users}->{$user_name};
 
-   if ($password) { $password = decrypt SECRET, $password }
+   if ($password) { $password = decrypt NUL, $password }
    else { $password = $self->get_line('+Enter password', AS_PASSWORD) };
 
    return $password;
@@ -52,7 +51,7 @@ sub set_user_password {
 
    my $data = $self->_local_config;
 
-   $data->{users}->{$user_name} = encrypt SECRET, $password;
+   $data->{users}->{$user_name} = encrypt NUL, $password;
 
    $self->_local_config($data);
    $self->info('Updated user password', { name => 'Worker.set_user_password' });
