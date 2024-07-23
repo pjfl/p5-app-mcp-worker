@@ -1,6 +1,6 @@
 package App::MCP::Worker::Role::ClientAuth;
 
-use Class::Usul::Cmd::Constants qw( EXCEPTION_CLASS NUL );
+use Class::Usul::Cmd::Constants qw( EXCEPTION_CLASS FALSE NUL TRUE );
 use HTTP::Request::Common       qw( GET POST );
 use Unexpected::Types           qw( NonEmptySimpleStr Object );
 use Digest                      qw( );
@@ -23,11 +23,17 @@ option 'key_id'    => is => 'ro',   isa => NonEmptySimpleStr,
    documentation   => 'Name of the private key file. Defaults to app-mcp',
    default         => 'app-mcp', format => 's', short => 'k';
 
-option 'user_name' => is => 'ro',   isa => NonEmptySimpleStr,
-   documentation   => 'Name in the user table and .mcprc file',
-   default         => 'unknown', format => 's', short => 'u';
+option 'user_name' =>
+   is            => 'lazy',
+   isa           => NonEmptySimpleStr,
+   documentation => 'Name in the user table and .mcprc file',
+   default       => sub { shift->config->prefix },
+   format        => 's',
+   short         => 'u';
 
 # Private attributes
+has '_fetch_timeout' => is => 'ro', default => 30;
+
 has '_srp'         => is => 'lazy', isa => Object,
    builder         => sub { Crypt::SRP->new( 'RFC5054-2048bit', 'SHA512' ) },
    reader          => 'srp';
@@ -35,8 +41,11 @@ has '_srp'         => is => 'lazy', isa => Object,
 has '_transcoder'  => is => 'lazy', isa => Object,
    builder         => sub { JSON::MaybeXS->new  }, reader => 'transcoder';
 
-has '_user_agent'  => is => 'lazy', isa => Object,
-   builder         => sub { LWP::UserAgent->new }, reader => 'user_agent';
+has '_user_agent'  =>
+   is      => 'lazy',
+   isa     => Object,
+   default => sub { LWP::UserAgent->new( timeout => shift->_fetch_timeout ) },
+   reader  => 'user_agent';
 
 # Package variables
 my $private_key_cache = {};
@@ -65,8 +74,8 @@ sub authenticate_session {
 
    my $content  = $res->content;
 
-   throw 'User [_1] authentication failure code [_2]: [_3]',
-      [$username, $res->code, $content->{message}] unless $res->is_success;
+   throw 'User [_1] authentication failure code [_2]: ' . $content->{message},
+      [$username, $res->code] unless $res->is_success;
 
    throw 'User [_1] M2 token verification failure', [$username]
       unless $self->srp->client_verify_M2(decode_base64 $content->{M2_token});
@@ -127,8 +136,8 @@ sub _compute_token {
 
    my $content = $res->content;
 
-   throw 'User [_1] authentication failure code [_2]: [_3]',
-      [$username, $res->code, $content->{message}] unless $res->is_success;
+   throw 'User [_1] authentication failure code [_2]: ' . $content->{message},
+      [$username, $res->code] unless $res->is_success;
 
    my $server_pub_key = decode_base64($content->{public_key});
 

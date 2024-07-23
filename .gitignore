@@ -5,9 +5,11 @@ cover_db/
 Build
 !Build/
 Build.bat
+.app-mcp-worker.log
 .directory
 .last_cover_stats
 .mcprc.json
+.ssh/
 LICENSE
 Makefile
 Makefile.old

@@ -1,7 +1,7 @@
 package App::MCP::Worker;
 
 use 5.010001;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 25 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 26 $ =~ /\d+/gmx );
 
 use Class::Usul::Cmd::Constants  qw( EXCEPTION_CLASS FALSE OK QUOTED_RE SPC
                                      TRUE );
@@ -14,6 +14,7 @@ use English                      qw( -no_match_vars );
 use Type::Utils                  qw( as coerce from subtype via );
 use Unexpected::Functions        qw( throw Unspecified );
 use App::MCP::Worker::Config;
+use App::MCP::Worker::Log;
 use Data::Record;
 use Try::Tiny;
 use Moo;
@@ -83,13 +84,21 @@ around 'BUILDARGS' => sub {
    return $attr;
 };
 
+sub BUILD {
+   my $self = shift;
+
+   $self->log(App::MCP::Worker::Log->new(builder => $self)) unless $self->log;
+
+   return;
+}
+
 # Public methods
 sub create_job : method {
    my $self    = shift;
    my $json    = $self->transcoder;
    my $server  = $self->servers->[0];
    my $tplate  = $self->uri_template;
-   my $uri     = $self->protocol."://${server}:" . $self->port;
+   my $uri     = $self->protocol . "://${server}:" . $self->port;
    my $sess    = $self->authenticate_session($uri, { template => $tplate });
    my $sess_id = $sess->{id};
    my $job     = encrypt $sess->{shared_secret}, $json->encode($self->job);
@@ -204,7 +213,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 25 $ of L<App::MCP::Worker>
+This documents version v0.2.$Rev: 26 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 
