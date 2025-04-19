@@ -1,7 +1,7 @@
 package App::MCP::Worker;
 
 use 5.010001;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 26 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 27 $ =~ /\d+/gmx );
 
 use Class::Usul::Cmd::Constants  qw( EXCEPTION_CLASS FALSE OK QUOTED_RE SPC
                                      TRUE );
@@ -9,11 +9,10 @@ use File::DataClass::Types       qw( ArrayRef Directory HashRef
                                      NonEmptySimpleStr NonZeroPositiveInt
                                      SimpleStr Str );
 use Web::ComposableRequest::Util qw( bson64id );
-use Class::Usul::Cmd::Util       qw( encrypt pad );
+use Class::Usul::Cmd::Util       qw( encrypt ensure_class_loaded pad );
 use English                      qw( -no_match_vars );
 use Type::Utils                  qw( as coerce from subtype via );
 use Unexpected::Functions        qw( throw Unspecified );
-use App::MCP::Worker::Config;
 use App::MCP::Worker::Log;
 use Data::Record;
 use Try::Tiny;
@@ -79,7 +78,13 @@ around 'BUILDARGS' => sub {
 
    my $attr = $orig->($self, @args);
 
-   $attr->{config} //= App::MCP::Worker::Config->new();
+   unless ($attr->{config}) {
+      my $config_class = $attr->{config_class} // 'App::MCP::Worker::Config';
+
+      ensure_class_loaded $config_class;
+
+      $attr->{config} = $config_class->new({ appclass => __PACKAGE__ });
+   }
 
    return $attr;
 };
@@ -213,7 +218,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 26 $ of L<App::MCP::Worker>
+This documents version v0.2.$Rev: 27 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 

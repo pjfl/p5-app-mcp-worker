@@ -1,5 +1,6 @@
 Revision history for App::MCP::Worker
 
+          - Can select config class via the constructor
           - Adds logging class
           - Encrypt/decrypt of user password uses default
           - Removed Class::Usul dependency

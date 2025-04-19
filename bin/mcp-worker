@@ -1,18 +1,13 @@
 #!/usr/bin/env perl
 
-use strict;
-use warnings;
-
-use English               qw( -no_match_vars );
-use File::Spec::Functions qw( catdir catfile updir );
-use FindBin               qw( $Bin );
-use lib               catdir( $Bin, updir, 'lib' );
+use English qw( -no_match_vars );
+use FindBin qw( $Bin );
+use File::Spec;
 
 BEGIN {
-   my $bind = $Bin; $bind =~ m{ \A ([^\$%&\*;<>\`|]+) \z }mx and $bind = $1;
-   my $path = catfile( $bind, 'mcp-localenv' );
-
-   -f $path and (do $path or die $EVAL_ERROR || "Path ${path} not done\n");
+   my $bind = $Bin; $bind = $1 if $bind =~ m{ \A ([^\$%&\*;<>\`|]+) \z }mx;
+   my $path = File::Spec->catfile($bind, 'mcp-localenv');
+   (do $path or die $EVAL_ERROR || "Path ${path} not done\n") if -f $path;
 }
 
 use App::MCP::Worker;
@@ -49,7 +44,7 @@ Lists the methods available in this program
 
 =head1 VERSION
 
-This documents version v0.1.$Rev: 25 $ of C<mcp-worker>
+This documents version v0.1.$Rev: 27 $ of C<mcp-worker>
 
 =head1 DESCRIPTION
 

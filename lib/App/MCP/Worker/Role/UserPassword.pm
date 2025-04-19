@@ -13,7 +13,7 @@ has 'rc_file' =>
    is      => 'lazy',
    isa     => Path,
    coerce  => TRUE,
-   default => sub { shift->config->my_home->catfile('.mcprc.json') };
+   default => sub { shift->config->home->catfile('.mcprc.json') };
 
 has '_file_schema' =>
    is      => 'lazy',

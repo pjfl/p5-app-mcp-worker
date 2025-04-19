@@ -172,7 +172,7 @@ sub _read_private_key {
 
    return $key if $key;
 
-   my $ssh_dir = $self->config->my_home->catdir('.ssh');
+   my $ssh_dir = $self->config->home->catdir('.ssh');
 
    return $private_key_cache->{$self->key_id}
         = $ssh_dir->catfile($self->key_id . '.priv')->all;
