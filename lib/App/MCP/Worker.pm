@@ -1,7 +1,7 @@
 package App::MCP::Worker;
 
 use 5.010001;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 27 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 28 $ =~ /\d+/gmx );
 
 use Class::Usul::Cmd::Constants  qw( EXCEPTION_CLASS FALSE OK QUOTED_RE SPC
                                      TRUE );
@@ -35,43 +35,152 @@ my $ServerList = subtype as ArrayRef;
 
 coerce $ServerList, from Str, via { [ split m{ [,] }mx, $_ ] };
 
-# Public attributes
-option 'job'       => is => 'ro',   isa => HashRef,
-   documentation   => 'Keys and values of a job definition in JSON format',
-   default         => sub { {} },   json => TRUE, short => 'j';
+=pod
 
-option 'port'      => is => 'ro',   isa => NonZeroPositiveInt,
-   documentation   => 'Port number for the remote servers. Defaults to 2012',
-   default         => 2012,         format => 'i', short => 'p';
+=encoding utf-8
 
-option 'protocol'  => is => 'ro',   isa => NonEmptySimpleStr,
-   documentation   => 'Which network protocol to use. Defaults to http',
-   default         => 'http',       format => 's', short => 'P';
+=head1 Name
 
-option 'servers'   => is => 'ro',   isa => $ServerList, coerce => TRUE,
-   documentation   => 'List of servers to send response status to',
-   default         => 'localhost',  format => 's', short => 's';
+App::MCP::Worker - Remotely executed worker process
 
-has 'command'      => is => 'lazy', isa => $ShellCmd, coerce => TRUE,
-   default         => 'true';
+=head1 Version
 
-has 'directory'    => is => 'ro',   isa => Directory | SimpleStr;
+This documents version v0.2.$Rev: 28 $ of L<App::MCP::Worker>
 
-has 'job_id'       => is => 'ro',   isa => NonZeroPositiveInt, default => $PID;
+=head1 Synopsis
 
-has 'runid'        => is => 'ro',   isa => NonEmptySimpleStr,
-   default         => bson64id;
+   #!/usr/bin/env perl
 
-has 'token'        => is => 'ro',   isa => SimpleStr;
+   use App::MCP::Worker;
 
-has 'uri_template' => is => 'ro',   isa => HashRef, default => sub {
-   return {
-      authenticate  => '/api/worker/%s/authenticate',
-      event         => '/api/worker/%s/create_event',
-      exchange_keys => '/api/worker/%s/exchange_keys',
-      job           => '/api/worker/%s/create_job',
-   }
-};
+   exit App::MCP::Worker->new_with_options()->run;
+
+=head1 Description
+
+Remotely executed worker process
+
+=head1 Configuration and Environment
+
+Defines the following attributes;
+
+=over 3
+
+=item C<job>
+
+Keys and values of a job definition in JSON format. Set from the command line
+with C<-j>
+
+=cut
+
+option 'job' =>
+   is            => 'ro',
+   isa           => HashRef,
+   documentation => 'Keys and values of a job definition in JSON format',
+   default       => sub { {} },
+   json          => TRUE,
+   short         => 'j';
+
+=item C<port>
+
+Port number for the remote servers. Defaults to B<2012>. Set from the command
+line with C<-p>
+
+=cut
+
+option 'port' =>
+   is            => 'ro',
+   isa           => NonZeroPositiveInt,
+   documentation => 'Port number for the remote servers. Defaults to 2012',
+   default       => 2012,
+   format        => 'i',
+   short         => 'p';
+
+=item C<protocol>
+
+Which network protocol to use. Defaults to B<http>. Set from the command line
+with C<-P>
+
+=cut
+
+option 'protocol' =>
+   is            => 'ro',
+   isa           => NonEmptySimpleStr,
+   documentation => 'Which network protocol to use. Defaults to http',
+   default       => 'http',
+   format        => 's',
+   short         => 'P';
+
+=item C<servers>
+
+List of servers to send response status to. Defaults to B<localhost>. Set from
+the command line with C<-s>
+
+=cut
+
+option 'servers' =>
+   is            => 'ro',
+   isa           => $ServerList,
+   coerce        => TRUE,
+   documentation => 'List of servers to send response status to',
+   default       => 'localhost',
+   format        => 's',
+   short         => 's';
+
+=item C<command>
+
+The command to execute. Coerced from a string. Defaults to B<true>
+
+=cut
+
+has 'command' =>
+   is      => 'lazy',
+   isa     => $ShellCmd,
+   coerce  => TRUE,
+   default => 'true';
+
+=item C<directory>
+
+The directory from which to execute the command
+
+=cut
+
+has 'directory' => is => 'ro', isa => Directory | SimpleStr;
+
+=item C<job_id>
+
+The numeric id of the job record
+
+=cut
+
+has 'job_id' => is => 'ro', isa => NonZeroPositiveInt, default => $PID;
+
+=item C<runid>
+
+Unique string for this run of the command
+
+=cut
+
+has 'runid' => is => 'ro', isa => NonEmptySimpleStr, default => bson64id;
+
+=item C<token>
+
+Used to encrypt the command's returned value
+
+=cut
+
+has 'token' => is => 'ro', isa => SimpleStr;
+
+=back
+
+=head1 Subroutines/Methods
+
+Defines the following methods;
+
+=over 3
+
+=item C<BUILDARGS>
+
+=cut
 
 around 'BUILDARGS' => sub {
    my ($orig, $self, @args) = @_;
@@ -89,6 +198,10 @@ around 'BUILDARGS' => sub {
    return $attr;
 };
 
+=item C<BUILD>
+
+=cut
+
 sub BUILD {
    my $self = shift;
 
@@ -97,26 +210,32 @@ sub BUILD {
    return;
 }
 
-# Public methods
+=item C<create_job> - Creates a new job on an MCP job scheduler
+
+=cut
+
 sub create_job : method {
    my $self    = shift;
-   my $json    = $self->transcoder;
+   my $trans   = $self->transcoder;
    my $server  = $self->servers->[0];
-   my $tplate  = $self->uri_template;
+   my $tplate  = $self->config->uri_template;
    my $uri     = $self->protocol . "://${server}:" . $self->port;
    my $sess    = $self->authenticate_session($uri, { template => $tplate });
+   my $job     = encrypt $sess->{shared_secret}, $trans->encode($self->job);
    my $sess_id = $sess->{id};
-   my $job     = encrypt $sess->{shared_secret}, $json->encode($self->job);
-      $uri    .= sprintf $self->uri_template->{job}, $sess_id;
+      $uri    .= sprintf $tplate->{job}, $sess_id;
    my $res     = $self->post_as_json($uri, { job => $job });
-   my $message = $res->content->{message};
 
    throw 'Session [_1] create job failed code [_2]: [_3]',
-      [ $sess_id, $res->code, $message ] unless $res->is_success;
+      [$sess_id, $res->{status}, $res->{reason}] unless $res->{success};
 
-   $self->info("SESS[${sess_id}]: ${message}");
+   $self->info("SESS[${sess_id}]: " . $res->{content}->{message});
    return OK;
 }
+
+=item C<dispatch>
+
+=cut
 
 sub dispatch {
    my $self = shift;
@@ -125,6 +244,10 @@ sub dispatch {
 
    return $r->out;
 }
+
+=item C<set_client_password> - Stores the clients API password in a local file
+
+=cut
 
 sub set_client_password : method {
    my $self = shift;
@@ -138,7 +261,6 @@ sub _send_event {
    my ($self, $transition, $r) = @_;
 
    my $runid  = $self->runid;
-   my $json   = $self->transcoder;
    my $event  = {
       job_id     => $self->job_id,
       pid        => $PID,
@@ -147,23 +269,22 @@ sub _send_event {
    };
    my $prefix = (pad uc $transition, 9, SPC, 'left') . "[${runid}]: ";
    my $format = $self->protocol . "://%s:" . $self->port
-              . sprintf $self->uri_template->{event}, $runid;
+              . sprintf $self->config->uri_template->{event}, $runid;
 
    $event->{rv} = $r->rv if $r;
 
    $self->log->debug($prefix . ($r ? 'Rv '.$r->rv : "Pid ${PID}"));
-   $event = encrypt $self->token, $json->encode($event);
+   $event = encrypt $self->token, $self->transcoder->encode($event);
 
    for my $server (@{$self->servers}) {
       try {
-         my $uri     = sprintf $format, $server;
-         my $res     = $self->post_as_json($uri, { event => $event });
-         my $message = $res->content->{message};
+         my $uri = sprintf $format, $server;
+         my $res = $self->post_as_json($uri, { event => $event });
 
          throw 'Run [_1] send event failed code [_2]: [_3]',
-            [ $runid, $res->code, $message ] unless $res->is_success;
+            [$runid, $res->{status}, $res->{reason}] unless $res->{success};
 
-         $self->log->debug($prefix . $message);
+         $self->log->debug($prefix . $res->{content}->{message});
       }
       catch { $self->log->error($_) };
    }
@@ -208,59 +329,7 @@ use namespace::autoclean;
 
 __END__
 
-=pod
-
-=encoding utf-8
-
-=head1 Name
-
-App::MCP::Worker - Remotely executed worker process
-
-=head1 Version
-
-This documents version v0.2.$Rev: 27 $ of L<App::MCP::Worker>
-
-=head1 Synopsis
-
-   use App::MCP::Worker;
-
-=head1 Description
-
-Remotely executed worker process
-
-=head1 Configuration and Environment
-
-Defines the following attributes;
-
-=over 3
-
-=item C<command>
-
-=item C<directory>
-
-=item C<job_id>
-
-=item C<port>
-
-=item C<protocol>
-
-=item C<runid>
-
-=item C<servers>
-
-=item C<token>
-
-=item C<uri_template>
-
 =back
-
-=head1 Subroutines/Methods
-
-=head2 C<create_job> - Creates a new job on an MCP job scheduler
-
-=head2 C<dispatch>
-
-=head2 C<set_client_password> - Stores the clients API password in a local file
 
 =head1 Diagnostics
 
@@ -273,8 +342,6 @@ L<Crypt::SRP> to install this distribution
 
 =over 3
 
-=item L<namespace::autoclean>
-
 =item L<Authen::HTTP::Signature>
 
 =item L<Class::Usul::Cmd>
@@ -285,13 +352,11 @@ L<Crypt::SRP> to install this distribution
 
 =item L<File::DataClass>
 
+=item L<HTTP::Tiny>
+
 =item L<JSON::MaybeXS>
 
-=item L<LWP::UserAgent>
-
 =item L<Moo>
-
-=item L<Regexp::Common>
 
 =item L<Try::Tiny>
 

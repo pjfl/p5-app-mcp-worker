@@ -4,11 +4,15 @@ App::MCP::Worker - Remotely executed worker process
 
 # Version
 
-This documents version v0.2.$Rev: 25 $ of [App::MCP::Worker](https://metacpan.org/pod/App%3A%3AMCP%3A%3AWorker)
+This documents version v0.2.$Rev: 27 $ of [App::MCP::Worker](https://metacpan.org/pod/App%3A%3AMCP%3A%3AWorker)
 
 # Synopsis
 
+    #!/usr/bin/env perl
+
     use App::MCP::Worker;
+
+    exit App::MCP::Worker->new_with_options()->run;
 
 # Description
 
@@ -18,23 +22,55 @@ Remotely executed worker process
 
 Defines the following attributes;
 
-- `command`
-- `directory`
-- `job_id`
+- `job`
+
+    Keys and values of a job definition in JSON format. Set from the command line
+    with `-j`
+
 - `port`
+
+    Port number for the remote servers. Defaults to **2012**. Set from the command
+    line with `-p`
+
 - `protocol`
-- `runid`
+
+    Which network protocol to use. Defaults to **http**. Set from the command line
+    with `-P`
+
 - `servers`
+
+    List of servers to send response status to. Defaults to **localhost**. Set from
+    the command line with `-s`
+
+- `command`
+
+    The command to execute. Coerced from a string. Defaults to **true**
+
+- `directory`
+
+    The directory from which to execute the command
+
+- `job_id`
+
+    The numeric id of the job record
+
+- `runid`
+
+    Unique string for this run of the command
+
 - `token`
-- `uri_template`
+
+    Used to encrypt the command's returned value
 
 # Subroutines/Methods
 
-## `create_job` - Creates a new job on an MCP job scheduler
+Defines the following methods;
 
-## `dispatch`
-
-## `set_client_password` - Stores the clients API password in a local file
+- `BUILDARGS`
+- `BUILD`
+- `create_job` - Creates a new job on an MCP job scheduler
+- `dispatch`
+- `set_client_password` - Stores the clients API password in a local file
 
 # Diagnostics
 
@@ -45,16 +81,14 @@ None
 You need to install the GNU MP library (`libgmp3-dev`) which is required by
 [Crypt::SRP](https://metacpan.org/pod/Crypt%3A%3ASRP) to install this distribution
 
-- [namespace::autoclean](https://metacpan.org/pod/namespace%3A%3Aautoclean)
 - [Authen::HTTP::Signature](https://metacpan.org/pod/Authen%3A%3AHTTP%3A%3ASignature)
 - [Class::Usul::Cmd](https://metacpan.org/pod/Class%3A%3AUsul%3A%3ACmd)
 - [Crypt::SRP](https://metacpan.org/pod/Crypt%3A%3ASRP)
 - [Data::Record](https://metacpan.org/pod/Data%3A%3ARecord)
 - [File::DataClass](https://metacpan.org/pod/File%3A%3ADataClass)
+- [HTTP::Tiny](https://metacpan.org/pod/HTTP%3A%3ATiny)
 - [JSON::MaybeXS](https://metacpan.org/pod/JSON%3A%3AMaybeXS)
-- [LWP::UserAgent](https://metacpan.org/pod/LWP%3A%3AUserAgent)
 - [Moo](https://metacpan.org/pod/Moo)
-- [Regexp::Common](https://metacpan.org/pod/Regexp%3A%3ACommon)
 - [Try::Tiny](https://metacpan.org/pod/Try%3A%3ATiny)
 - [Type::Tiny](https://metacpan.org/pod/Type%3A%3ATiny)
 - [Unexpected](https://metacpan.org/pod/Unexpected)

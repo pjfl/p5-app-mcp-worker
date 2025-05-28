@@ -2,26 +2,32 @@ package App::MCP::Worker::Role::ClientAuth;
 
 use Class::Usul::Cmd::Constants qw( EXCEPTION_CLASS FALSE NUL TRUE );
 use HTTP::Request::Common       qw( GET POST );
-use Unexpected::Types           qw( NonEmptySimpleStr Object );
+use Unexpected::Types           qw( Int NonEmptySimpleStr );
+use Class::Usul::Cmd::Util      qw( distname );
 use Digest                      qw( );
 use Digest::MD5                 qw( md5_hex );
 use JSON::MaybeXS               qw( );
 use MIME::Base64                qw( decode_base64 encode_base64 );
 use Ref::Util                   qw( is_hashref );
+use Sys::Hostname               qw( hostname );
+use Type::Utils                 qw( class_type );
 use Unexpected::Functions       qw( throw Unspecified );
 use Authen::HTTP::Signature;
 use Crypt::SRP;
-use LWP::UserAgent;
-use Sys::Hostname;
+use HTTP::Tiny;
 use Try::Tiny;
 use Moo::Role;
 use Class::Usul::Cmd::Options;
 
 requires qw( config get_user_password log );
 
-option 'key_id'    => is => 'ro',   isa => NonEmptySimpleStr,
-   documentation   => 'Name of the private key file. Defaults to app-mcp',
-   default         => 'app-mcp', format => 's', short => 'k';
+option 'key_id' =>
+   is            => 'lazy',
+   isa           => NonEmptySimpleStr,
+   documentation => 'Name of the private key file. Defaults to app-mcp',
+   default       => sub { distname shift->config->appclass },
+   format        => 's',
+   short         => 'k';
 
 option 'user_name' =>
    is            => 'lazy',
@@ -32,23 +38,25 @@ option 'user_name' =>
    short         => 'u';
 
 # Private attributes
-has '_fetch_timeout' => is => 'ro', default => 30;
+has '_fetch_timeout' => is => 'ro', isa => Int, default => 30;
 
-has '_srp'         => is => 'lazy', isa => Object,
-   builder         => sub { Crypt::SRP->new( 'RFC5054-2048bit', 'SHA512' ) },
-   reader          => 'srp';
+has '_srp' =>
+   is      => 'lazy',
+   isa     => class_type('Crypt::SRP'),
+   default => sub { Crypt::SRP->new( 'RFC5054-2048bit', 'SHA512' ) },
+   reader  => 'srp';
 
-has '_transcoder'  => is => 'lazy', isa => Object,
-   builder         => sub { JSON::MaybeXS->new  }, reader => 'transcoder';
+has '_transcoder' =>
+   is      => 'lazy',
+   isa     => class_type('JSON::MaybeXS::JSON'),
+   default => sub { JSON::MaybeXS->new( convert_blessed => TRUE )  },
+   reader  => 'transcoder';
 
 has '_user_agent'  =>
    is      => 'lazy',
-   isa     => Object,
-   default => sub { LWP::UserAgent->new( timeout => shift->_fetch_timeout ) },
+   isa     => class_type('HTTP::Tiny'),
+   default => sub { HTTP::Tiny->new( timeout => shift->_fetch_timeout ) },
    reader  => 'user_agent';
-
-# Package variables
-my $private_key_cache = {};
 
 # Public methods
 sub authenticate_session {
@@ -72,10 +80,10 @@ sub authenticate_session {
 
    $res = $self->post_as_json($auth_uri, { M1_token => $token });
 
-   my $content  = $res->content;
+   throw 'User [_1] authentication failure code [_2]: [_3]',
+      [$username, $res->{status}, $res->{reason}] unless $res->{success};
 
-   throw 'User [_1] authentication failure code [_2]: ' . $content->{message},
-      [$username, $res->code] unless $res->is_success;
+   my $content  = $res->{content};
 
    throw 'User [_1] M2 token verification failure', [$username]
       unless $self->srp->client_verify_M2(decode_base64 $content->{M2_token});
@@ -134,15 +142,14 @@ sub post_as_json {
 sub _compute_token {
    my ($self, $username, $password, $res) = @_;
 
-   my $content = $res->content;
+   throw 'User [_1] authentication failure code [_2]: [_3]',
+      [$username, $res->{status}, $res->{reason}] unless $res->{success};
 
-   throw 'User [_1] authentication failure code [_2]: ' . $content->{message},
-      [$username, $res->code] unless $res->is_success;
-
+   my $content = $res->{content};
    my $server_pub_key = decode_base64($content->{public_key});
 
    $self->log->debug('Auth server pub key ' . (md5_hex $server_pub_key));
-   $self->log->debug('Client init ' . (md5_hex $username.$content->{salt}));
+   $self->log->debug('Client init ' . (md5_hex $username . $content->{salt}));
 
    throw 'User [_1] server public key verification failure', [$username]
       unless $self->srp->client_verify_B($server_pub_key);
@@ -158,13 +165,18 @@ sub _compute_token {
 sub _decoded_response_to_signed_request {
    my ($self, $req) = @_;
 
-   my $res = $self->user_agent->request($req);
+   my $options = { content => $req->content, headers => $req->headers };
+   my $res     = $self->user_agent->request($req->method, $req->uri, $options);
 
-   try   { $res->content($self->transcoder->decode($res->content)) }
-   catch { $res->content({ message => $res->content }) };
+   return $res unless $res->{success};
+
+   try   { $res->{content} = $self->transcoder->decode($res->{content}) }
+   catch { $res->{reason} = "${_}"; $res->{success} = FALSE };
 
    return $res;
 }
+
+my $private_key_cache = {};
 
 sub _read_private_key {
    my $self = shift;
@@ -172,10 +184,10 @@ sub _read_private_key {
 
    return $key if $key;
 
-   my $ssh_dir = $self->config->home->catdir('.ssh');
+   my $ssh_dir  = $self->config->home->catdir('.ssh');
+   my $ssh_file = $ssh_dir->catfile($self->key_id . '.priv');
 
-   return $private_key_cache->{$self->key_id}
-        = $ssh_dir->catfile($self->key_id . '.priv')->all;
+   return $private_key_cache->{$self->key_id} = $ssh_file->all;
 }
 
 use namespace::autoclean;
