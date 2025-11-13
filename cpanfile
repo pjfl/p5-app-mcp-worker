@@ -11,9 +11,12 @@ requires "HTTP::Tiny" => "0.076";
 requires "JSON::MaybeXS" => "1.002002";
 requires "Math::BigInt::GMP" => "1.38";
 requires "Moo" => "1.005000";
+requires "Ref::Util" => "0.204";
+requires "Text::CSV_XS" => "1.56";
 requires "Try::Tiny" => "0.22";
 requires "Type::Tiny" => "0.046";
 requires "Unexpected" => "v0.34.0";
+requires "Web::ComposableRequest" => "v0.22.1";
 requires "namespace::autoclean" => "0.19";
 requires "perl" => "5.010001";
 

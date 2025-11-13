@@ -34,6 +34,8 @@ has 'uri_template' =>
       }
    };
 
+has 'vardir' => is => 'lazy', isa => Directory, default => sub { shift->home };
+
 use namespace::autoclean;
 
 1;

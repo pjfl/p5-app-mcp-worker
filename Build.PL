@@ -25,9 +25,12 @@ my $prereqs  = {
     'JSON::MaybeXS' => '1.002002',
     'Math::BigInt::GMP' => '1.38',
     'Moo' => '1.005000',
+    'Ref::Util' => '0.204',
+    'Text::CSV_XS' => '1.56',
     'Try::Tiny' => '0.22',
     'Type::Tiny' => '0.046',
     'Unexpected' => 'v0.34.0',
+    'Web::ComposableRequest' => 'v0.22.1',
     'namespace::autoclean' => '0.19',
     'perl' => '5.010001'
   },

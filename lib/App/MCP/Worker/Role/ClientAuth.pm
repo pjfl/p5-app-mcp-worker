@@ -48,7 +48,7 @@ has '_srp' =>
 
 has '_transcoder' =>
    is      => 'lazy',
-   isa     => class_type('JSON::MaybeXS::JSON'),
+   isa     => class_type(JSON::MaybeXS::JSON),
    default => sub { JSON::MaybeXS->new( convert_blessed => TRUE )  },
    reader  => 'transcoder';
 

@@ -1,15 +1,16 @@
 package App::MCP::Worker;
 
 use 5.010001;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 28 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 29 $ =~ /\d+/gmx );
 
-use Class::Usul::Cmd::Constants  qw( EXCEPTION_CLASS FALSE OK QUOTED_RE SPC
-                                     TRUE );
+use Class::Usul::Cmd::Constants  qw( EXCEPTION_CLASS FALSE OK QUOTED_RE
+                                     SPC TRUE );
 use File::DataClass::Types       qw( ArrayRef Directory HashRef
                                      NonEmptySimpleStr NonZeroPositiveInt
                                      SimpleStr Str );
+use File::DataClass::IO          qw( io );
 use Web::ComposableRequest::Util qw( bson64id );
-use Class::Usul::Cmd::Util       qw( encrypt ensure_class_loaded pad );
+use Class::Usul::Cmd::Util       qw( elapsed encrypt ensure_class_loaded pad );
 use English                      qw( -no_match_vars );
 use Type::Utils                  qw( as coerce from subtype via );
 use Unexpected::Functions        qw( throw Unspecified );
@@ -45,7 +46,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 28 $ of L<App::MCP::Worker>
+This documents version v0.2.$Rev: 29 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 
@@ -253,6 +254,36 @@ sub set_client_password : method {
    my $self = shift;
 
    $self->set_user_password(@{$self->extra_argv});
+   return OK;
+}
+
+=item wait_for_file - Waits for the file specified by option 'path'
+
+Polling frequency defaults to once every five seconds and is set by the option
+'rate'. If option 'timeout' is set and the elapsed runtime exceeds this,
+exit with a non zero return code (fail)
+
+=cut
+
+sub wait_for_file : method {
+   my $self = shift;
+
+   throw Unspecified, ['option path'] unless exists $self->options->{path};
+
+   my $path = io $self->options->{path};
+
+   $path = $path->absolute($self->config->vardir) unless $path->is_absolute;
+
+   my $rate    = $self->options->{rate} // 5;
+   my $timeout = $self->options->{timeout} // 0;
+
+   while (!$path->exists) {
+      throw 'Timedout after [_1] seconds', [$timedout]
+         if $timeout and elapsed > $timeout;
+
+      sleep $rate;
+   }
+
    return OK;
 }
 
