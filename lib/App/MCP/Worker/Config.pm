@@ -13,7 +13,7 @@ has 'logfile' =>
    isa     => Path,
    default => sub {
       my $self = shift;
-      my $dist = distname $self->appclass;
+      my $dist = lc distname $self->appclass;
 
       return $self->home->catfile('.' . $dist . '-worker.log');
    };
@@ -36,7 +36,15 @@ has 'uri_template' =>
       }
    };
 
-has 'vardir' => is => 'lazy', isa => Directory, default => sub { shift->home };
+has 'vardir' =>
+   is      => 'lazy',
+   isa     => Directory,
+   default => sub {
+      my $self = shift;
+      my $dir  = $self->home->catdir('var');
+
+      return $dir->exists ? $dir : $self->home;
+   };
 
 use namespace::autoclean;
 

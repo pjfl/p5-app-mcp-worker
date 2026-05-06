@@ -1,7 +1,7 @@
 package App::MCP::Worker;
 
 use 5.010001;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 30 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 31 $ =~ /\d+/gmx );
 
 use Class::Usul::Cmd::Constants  qw( EXCEPTION_CLASS FAILED FALSE OK QUOTED_RE
                                      SPC TRUE );
@@ -46,7 +46,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 30 $ of L<App::MCP::Worker>
+This documents version v0.2.$Rev: 31 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 
@@ -210,6 +210,28 @@ sub BUILD {
    return;
 }
 
+=item C<archive_file> - Archives a file
+
+=cut
+
+sub archive_file : method {
+   my $self = shift;
+
+   throw Unspecified, ['option path'] unless exists $self->options->{path};
+
+   my $path = io $self->options->{path};
+
+   $path = $path->absolute($self->config->vardir) unless $path->is_absolute;
+
+   return throw 'File [_1] not found', ["${path}"] unless $path->exists;
+
+   my $archive = $path->parent->catfile('A_' . $path->basename);
+
+   $path->move($archive);
+   $self->info('Archived ' . $self->options->{path});
+   return OK;
+}
+
 =item C<create_job> - Creates a new job on an MCP job scheduler
 
 =cut
@@ -258,6 +280,8 @@ sub set_client_password : method {
 }
 
 =item C<wait_for_awhile> - Waits for some time then finishes
+
+This is a dummy method for testing purposes
 
 =cut
 
