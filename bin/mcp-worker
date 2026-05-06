@@ -22,7 +22,7 @@ __END__
 
 =head1 NAME
 
-mcp-worker - One-line description of the programs purpose
+mcp-worker - Remote command execution worker
 
 =head1 SYNOPSIS
 
@@ -44,7 +44,7 @@ Lists the methods available in this program
 
 =head1 VERSION
 
-This documents version v0.1.$Rev: 27 $ of C<mcp-worker>
+This documents version v0.1.$Rev: 32 $ of C<mcp-worker>
 
 =head1 DESCRIPTION
 

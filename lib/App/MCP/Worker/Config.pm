@@ -8,21 +8,42 @@ use Moo;
 
 has 'appclass' => is => 'ro', isa => Str, required => TRUE;
 
+has 'logdir' =>
+   is      => 'lazy',
+   isa     => Directory,
+   default => sub {
+      my $self = shift;
+      my $dir  = $self->vardir->catdir('log');
+
+      return $dir->exists ? $dir : $self->vardir;
+   };
+
 has 'logfile' =>
    is      => 'lazy',
    isa     => Path,
    default => sub {
       my $self = shift;
       my $dist = lc distname $self->appclass;
+      my $file = "${dist}.csv";
 
-      return $self->home->catfile('.' . $dist . '-worker.log');
+      $file = ".${file}" if $self->logdir eq $self->vardir;
+
+      return $self->logdir->catfile($file);
    };
 
 has 'home' => is => 'ro', isa => Directory, default => sub { io '.' };
 
 has 'prefix' => is => 'ro', isa => Str, default => 'mcp';
 
-has 'tempdir' => is => 'lazy', default => sub { shift->home };
+has 'tempdir' =>
+   is      => 'lazy',
+   isa     => Directory,
+   default => sub {
+      my $self = shift;
+      my $dir  = $self->vardir->catdir('tmp');
+
+      return $dir->exists ? $dir : $self->vardir;
+   };
 
 has 'uri_template' =>
    is      => 'ro',

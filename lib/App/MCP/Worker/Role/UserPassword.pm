@@ -87,14 +87,17 @@ __END__
 
 =head1 Name
 
-App::MCP::Worker::Role::UserPassword - One-line description of the modules purpose
+App::MCP::Worker::Role::UserPassword - Obtain and store the user passsword
 
 =head1 Synopsis
 
+   use Moo;
+
    with 'App::MCP::Worker::Role::UserPassword';
-   # Brief but working code examples
 
 =head1 Description
+
+Obtain and store the user passsword
 
 =head1 Configuration and Environment
 
@@ -102,15 +105,25 @@ Defines the following attributes;
 
 =over 3
 
+=item C<rc_file>
+
 =back
 
 =head1 Subroutines/Methods
 
-=head2 get_user_password
+Defined the following methods;
 
-=head2 set_user_password
+=over 3
+
+=item C<get_user_password>
+
+=item C<set_user_password>
+
+=back
 
 =head1 Diagnostics
+
+None
 
 =head1 Dependencies
 

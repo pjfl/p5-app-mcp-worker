@@ -1,5 +1,6 @@
 Revision history for App::MCP::Worker
 
+          - Renamed log file and moved to log directory if available
           - Adds archive_file method to Worker
           - Adds wait_for_awhile method to Worker
           - Adds wait_for_file method to Worker

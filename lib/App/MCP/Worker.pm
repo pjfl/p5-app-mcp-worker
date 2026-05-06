@@ -1,7 +1,7 @@
 package App::MCP::Worker;
 
 use 5.010001;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 31 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 32 $ =~ /\d+/gmx );
 
 use Class::Usul::Cmd::Constants  qw( EXCEPTION_CLASS FAILED FALSE OK QUOTED_RE
                                      SPC TRUE );
@@ -46,7 +46,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 31 $ of L<App::MCP::Worker>
+This documents version v0.2.$Rev: 32 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 
@@ -291,6 +291,7 @@ sub wait_for_awhile : method {
    my $rv       = $self->next_argv ? FAILED : OK;
 
    sleep $lifetime;
+   $self->info("Waited for ${lifetime} seconds");
    return $rv;
 }
 

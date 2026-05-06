@@ -4,14 +4,14 @@ use Class::Usul::Cmd::Constants qw( EXCEPTION_CLASS FALSE NUL TRUE );
 use HTTP::Request::Common       qw( GET POST );
 use Unexpected::Types           qw( Int NonEmptySimpleStr );
 use Class::Usul::Cmd::Util      qw( distname );
-use Digest                      qw( );
 use Digest::MD5                 qw( md5_hex );
-use JSON::MaybeXS               qw( );
 use MIME::Base64                qw( decode_base64 encode_base64 );
 use Ref::Util                   qw( is_hashref );
 use Sys::Hostname               qw( hostname );
 use Type::Utils                 qw( class_type );
 use Unexpected::Functions       qw( throw Unspecified );
+use Digest                      qw( );
+use JSON::MaybeXS               qw( );
 use Authen::HTTP::Signature;
 use Crypt::SRP;
 use HTTP::Tiny;
@@ -204,18 +204,21 @@ __END__
 
 =head1 Name
 
-App::MCP::Worker::Role::ClientAuth - One-line description of the modules purpose
+App::MCP::Worker::Role::ClientAuth - Client Authentication
 
 =head1 Synopsis
 
+   use Moo;
+
    with 'App::MCP::Worker::Role::ClientAuth';
-   # Brief but working code examples
 
 =head1 Description
 
+Client Authentication
+
 =head1 Configuration and Environment
 
-Defines the following attributes
+Defines the following attributes;
 
 =over 3
 
@@ -227,13 +230,19 @@ Defines the following attributes
 
 =head1 Subroutines/Methods
 
-=head2 C<authenticate_session>
+Defines the following methods;
 
-=head2 C<get_with_sig>
+=over 3
 
-=head2 C<post_as_json>
+=item C<authenticate_session>
+
+=item C<get_with_sig>
+
+=item C<post_as_json>
 
 =head1 Diagnostics
+
+None
 
 =head1 Dependencies
 
