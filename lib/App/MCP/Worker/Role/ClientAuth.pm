@@ -25,7 +25,7 @@ option 'key_id' =>
    is            => 'lazy',
    isa           => NonEmptySimpleStr,
    documentation => 'Name of the private key file. Defaults to app-mcp',
-   default       => sub { distname shift->config->appclass },
+   default       => sub { lc distname shift->config->appclass },
    format        => 's',
    short         => 'k';
 
@@ -102,7 +102,7 @@ sub get_with_sig {
 
    # TODO: If $uri was_a URI::http[s] then we can use query_form
    for (keys %{ $content // {} }) {
-      $query .= $query ? '&' : '?'; $query .= "${_}=".$content->{ $_ };
+      $query .= $query ? '&' : '?'; $query .= "${_}=" . $content->{ $_ };
    }
 
    my $req = GET $uri . $query;
@@ -164,6 +164,8 @@ sub _compute_token {
 
 sub _decoded_response_to_signed_request {
    my ($self, $req) = @_;
+
+   $req->remove_header('::std_case'); # Strange artifact
 
    my $options = { content => $req->content, headers => $req->headers };
    my $res     = $self->user_agent->request($req->method, $req->uri, $options);

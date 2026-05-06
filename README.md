@@ -4,7 +4,7 @@ App::MCP::Worker - Remotely executed worker process
 
 # Version
 
-This documents version v0.2.$Rev: 28 $ of [App::MCP::Worker](https://metacpan.org/pod/App%3A%3AMCP%3A%3AWorker)
+This documents version v0.2.$Rev: 29 $ of [App::MCP::Worker](https://metacpan.org/pod/App%3A%3AMCP%3A%3AWorker)
 
 # Synopsis
 
@@ -71,6 +71,11 @@ Defines the following methods;
 - `create_job` - Creates a new job on an MCP job scheduler
 - `dispatch`
 - `set_client_password` - Stores the clients API password in a local file
+- wait\_for\_file - Waits for the file specified by option 'path'
+
+    Polling frequency defaults to once every five seconds and is set by the option
+    'rate'. If option 'timeout' is set and the elapsed runtime exceeds this,
+    exit with a non zero return code (fail)
 
 # Diagnostics
 

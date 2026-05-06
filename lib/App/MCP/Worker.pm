@@ -1,13 +1,13 @@
 package App::MCP::Worker;
 
 use 5.010001;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 29 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 30 $ =~ /\d+/gmx );
 
-use Class::Usul::Cmd::Constants  qw( EXCEPTION_CLASS FALSE OK QUOTED_RE
+use Class::Usul::Cmd::Constants  qw( EXCEPTION_CLASS FAILED FALSE OK QUOTED_RE
                                      SPC TRUE );
 use File::DataClass::Types       qw( ArrayRef Directory HashRef
                                      NonEmptySimpleStr NonZeroPositiveInt
-                                     SimpleStr Str );
+                                     SimpleStr Str Undef );
 use File::DataClass::IO          qw( io );
 use Web::ComposableRequest::Util qw( bson64id );
 use Class::Usul::Cmd::Util       qw( elapsed encrypt ensure_class_loaded pad );
@@ -46,7 +46,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 29 $ of L<App::MCP::Worker>
+This documents version v0.2.$Rev: 30 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 
@@ -145,7 +145,7 @@ The directory from which to execute the command
 
 =cut
 
-has 'directory' => is => 'ro', isa => Directory | SimpleStr;
+has 'directory' => is => 'ro', isa => Directory | SimpleStr | Undef;
 
 =item C<job_id>
 
@@ -187,14 +187,13 @@ around 'BUILDARGS' => sub {
    my ($orig, $self, @args) = @_;
 
    my $attr = $orig->($self, @args);
+   my $config_class = $attr->{config_class} // 'App::MCP::Worker::Config';
 
-   unless ($attr->{config}) {
-      my $config_class = $attr->{config_class} // 'App::MCP::Worker::Config';
+   ensure_class_loaded $config_class;
 
-      ensure_class_loaded $config_class;
+   my $args = { appclass => __PACKAGE__, %{$attr->{config} // {}} };
 
-      $attr->{config} = $config_class->new({ appclass => __PACKAGE__ });
-   }
+   $attr->{config} = $config_class->new($args);
 
    return $attr;
 };
@@ -239,11 +238,12 @@ sub create_job : method {
 =cut
 
 sub dispatch {
-   my $self = shift;
+   my $self    = shift;
+   my $err     = $self->config->tempdir->catfile('worker.err');
+   my $options = { err => $err, detach => TRUE, ignore_zombies => FALSE };
+   my $resp    = $self->run_cmd([ sub { $self->_run_command } ], $options);
 
-   my $r = $self->run_cmd([ sub { $self->_run_command } ], { async => TRUE });
-
-   return $r->out;
+   return $resp->out;
 }
 
 =item C<set_client_password> - Stores the clients API password in a local file
@@ -257,10 +257,23 @@ sub set_client_password : method {
    return OK;
 }
 
-=item wait_for_file - Waits for the file specified by option 'path'
+=item C<wait_for_awhile> - Waits for some time then finishes
+
+=cut
+
+sub wait_for_awhile : method {
+   my $self     = shift;
+   my $lifetime = $self->next_argv // 10;
+   my $rv       = $self->next_argv ? FAILED : OK;
+
+   sleep $lifetime;
+   return $rv;
+}
+
+=item C<wait_for_file> - Waits for the file specified by option 'path'
 
 Polling frequency defaults to once every five seconds and is set by the option
-'rate'. If option 'timeout' is set and the elapsed runtime exceeds this,
+C<rate>. If option C<timeout> is set and the elapsed runtime exceeds this,
 exit with a non zero return code (fail)
 
 =cut
@@ -278,7 +291,7 @@ sub wait_for_file : method {
    my $timeout = $self->options->{timeout} // 0;
 
    while (!$path->exists) {
-      throw 'Timedout after [_1] seconds', [$timedout]
+      throw 'Timedout after [_1] seconds', [$timeout]
          if $timeout and elapsed > $timeout;
 
       sleep $rate;
@@ -298,7 +311,7 @@ sub _send_event {
       runid      => $runid,
       transition => $transition,
    };
-   my $prefix = (pad uc $transition, 9, SPC, 'left') . "[${runid}]: ";
+   my $prefix = (pad ucfirst $transition, 9, SPC, 'left') . "[${runid}]: ";
    my $format = $self->protocol . "://%s:" . $self->port
               . sprintf $self->config->uri_template->{event}, $runid;
 
@@ -312,12 +325,15 @@ sub _send_event {
          my $uri = sprintf $format, $server;
          my $res = $self->post_as_json($uri, { event => $event });
 
-         throw 'Run [_1] send event failed code [_2]: [_3]',
-            [$runid, $res->{status}, $res->{reason}] unless $res->{success};
+         unless ($res->{success}) {
+            my $message = $self->transcoder->decode($res->{content})->{message};
+
+            throw 'Send event response [_1]', [$res->{status} . SPC . $message];
+         }
 
          $self->log->debug($prefix . $res->{content}->{message});
       }
-      catch { $self->log->error($_) };
+      catch { $self->log->error("Failed[${runid}]: ${_}") };
    }
 
    return;
@@ -326,6 +342,7 @@ sub _send_event {
 sub _run_command {
    my $self = shift;
 
+   $self->_set_program_name;
    $self->_send_event('started');
 
    try {
@@ -340,7 +357,14 @@ sub _run_command {
       $self->_send_event('terminate');
    };
 
-   return;
+   return OK;
+}
+
+sub _set_program_name {
+   my $self   = shift;
+   my $config = $self->config;
+
+   return $PROGRAM_NAME = $config->prefix . '-worker - ' . $self->runid;
 }
 
 # Private functions

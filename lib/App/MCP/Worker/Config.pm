@@ -22,15 +22,17 @@ has 'home' => is => 'ro', isa => Directory, default => sub { io '.' };
 
 has 'prefix' => is => 'ro', isa => Str, default => 'mcp';
 
+has 'tempdir' => is => 'lazy', default => sub { shift->home };
+
 has 'uri_template' =>
    is      => 'ro',
    isa     => HashRef,
    default => sub {
       return {
-         authenticate  => '/mcp/api/worker/%s/authenticate',
-         event         => '/mcp/api/worker/%s/create_event',
-         exchange_keys => '/mcp/api/worker/%s/exchange_keys',
-         job           => '/mcp/api/worker/%s/create_job',
+         authenticate  => '/mcp/api/user/%s/authenticate',
+         event         => '/mcp/api/run/%s/create_event',
+         exchange_keys => '/mcp/api/user/%s/exchange_keys',
+         job           => '/mcp/api/session/%s/create_job',
       }
    };
 
