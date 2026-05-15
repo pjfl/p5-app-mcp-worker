@@ -35,6 +35,16 @@ has 'home' => is => 'ro', isa => Directory, default => sub { io '.' };
 
 has 'prefix' => is => 'ro', isa => Str, default => 'mcp';
 
+has 'rundir' =>
+   is      => 'lazy',
+   isa     => Directory,
+   default => sub {
+      my $self = shift;
+      my $dir  = $self->vardir->catdir('tmp');
+
+      return $dir->exists ? $dir : $self->vardir;
+   };
+
 has 'tempdir' =>
    is      => 'lazy',
    isa     => Directory,
@@ -50,10 +60,10 @@ has 'uri_template' =>
    isa     => HashRef,
    default => sub {
       return {
-         authenticate  => '/mcp/api/user/%s/authenticate',
-         event         => '/mcp/api/run/%s/create_event',
-         exchange_keys => '/mcp/api/user/%s/exchange_keys',
-         job           => '/mcp/api/session/%s/create_job',
+         authenticate  => '/mcp/worker/user/%s/authenticate',
+         event         => '/mcp/worker/run/%s/create_event',
+         exchange_keys => '/mcp/worker/user/%s/exchange_keys',
+         job           => '/mcp/worker/session/%s/create_job',
       }
    };
 

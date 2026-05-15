@@ -1,13 +1,13 @@
 package App::MCP::Worker;
 
 use 5.010001;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 32 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 33 $ =~ /\d+/gmx );
 
-use Class::Usul::Cmd::Constants  qw( EXCEPTION_CLASS FAILED FALSE OK QUOTED_RE
-                                     SPC TRUE );
+use Class::Usul::Cmd::Constants  qw( EXCEPTION_CLASS FAILED FALSE NUL OK
+                                     QUOTED_RE SPC TRUE );
 use File::DataClass::Types       qw( ArrayRef Directory HashRef
                                      NonEmptySimpleStr NonZeroPositiveInt
-                                     SimpleStr Str Undef );
+                                     Path SimpleStr Str Undef );
 use File::DataClass::IO          qw( io );
 use Web::ComposableRequest::Util qw( bson64id );
 use Class::Usul::Cmd::Util       qw( elapsed encrypt ensure_class_loaded pad );
@@ -46,7 +46,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 32 $ of L<App::MCP::Worker>
+This documents version v0.2.$Rev: 33 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 
@@ -155,6 +155,21 @@ The numeric id of the job record
 
 has 'job_id' => is => 'ro', isa => NonZeroPositiveInt, default => $PID;
 
+=item C<pidfile>
+
+Path to the file in which the job's process id is stored. Contains C<runid>
+
+=cut
+
+has 'pidfile' =>
+   is      => 'lazy',
+   isa     => Path,
+   default => sub {
+      my $self = shift;
+
+      return $self->config->rundir->catfile($self->runid . '.pid');
+   };
+
 =item C<runid>
 
 Unique string for this run of the command
@@ -181,6 +196,9 @@ Defines the following methods;
 
 =item C<BUILDARGS>
 
+Instantiates an instance of the configuration class which is by default
+L<App::MCP::Worker::Config>
+
 =cut
 
 around 'BUILDARGS' => sub {
@@ -200,6 +218,8 @@ around 'BUILDARGS' => sub {
 
 =item C<BUILD>
 
+Instantiates the log object if we do not already have one
+
 =cut
 
 sub BUILD {
@@ -211,6 +231,8 @@ sub BUILD {
 }
 
 =item C<archive_file> - Archives a file
+
+Renames the specified file prefixing it with C<A_>
 
 =cut
 
@@ -233,6 +255,8 @@ sub archive_file : method {
 }
 
 =item C<create_job> - Creates a new job on an MCP job scheduler
+
+Posts a new job to the server
 
 =cut
 
@@ -257,18 +281,37 @@ sub create_job : method {
 
 =item C<dispatch>
 
+Execute the specified command in a detached child process
+
 =cut
 
 sub dispatch {
    my $self    = shift;
+   my $pidfile = $self->pidfile;
+
+   if ($self->command->[0] eq 'kill_job') {
+      return 'File ${pidfile} not found' unless $pidfile->exists;
+
+      my $pid = $pidfile->chomp->getline;
+
+      kill 'TERM', $pid;
+      $pidfile->unlink;
+
+      return "Process ${pid} terminated";
+   }
+
    my $err     = $self->config->tempdir->catfile('worker.err');
    my $options = { err => $err, detach => TRUE, ignore_zombies => FALSE };
-   my $resp    = $self->run_cmd([ sub { $self->_run_command } ], $options);
+   my $result  = $self->run_cmd([ sub { $self->_run_command } ], $options);
 
-   return $resp->out;
+   $pidfile->println($result->pid)->flush;
+
+   return $result->out;
 }
 
 =item C<set_client_password> - Stores the clients API password in a local file
+
+Encrypts the password before storing
 
 =cut
 
@@ -312,6 +355,10 @@ sub wait_for_file : method {
 
    $path = $path->absolute($self->config->vardir) unless $path->is_absolute;
 
+   my $delete_first = $self->next_argv // NUL;
+
+   $path->unlink if $delete_first && $path->exists;
+
    my $rate    = $self->options->{rate} // 5;
    my $timeout = $self->options->{timeout} // 0;
 
@@ -327,22 +374,26 @@ sub wait_for_file : method {
 
 # Private methods
 sub _send_event {
-   my ($self, $transition, $r) = @_;
+   my ($self, $transition, $options) = @_;
+
+   $options //= {};
 
    my $runid  = $self->runid;
+   my $job_id = $options->{job_id} // $self->job_id;
    my $event  = {
-      job_id     => $self->job_id,
+      job_id     => $job_id,
       pid        => $PID,
       runid      => $runid,
       transition => $transition,
    };
    my $prefix = (pad ucfirst $transition, 9, SPC, 'left') . "[${runid}]: ";
-   my $format = $self->protocol . "://%s:" . $self->port
-              . sprintf $self->config->uri_template->{event}, $runid;
+   my $format = $self->protocol . '://%s:' . $self->port .
+                sprintf $self->config->uri_template->{event}, $runid;
+   my $rv     = $options->{rv};
 
-   $event->{rv} = $r->rv if $r;
+   $event->{rv} = $rv if defined $rv;
 
-   $self->log->debug($prefix . ($r ? 'Rv '.$r->rv : "Pid ${PID}"));
+   $self->log->debug($prefix . (defined $rv ? "Rv ${rv}" : "Pid ${PID}"));
    $event = encrypt $self->token, $self->transcoder->encode($event);
 
    for my $server (@{$self->servers}) {
@@ -364,24 +415,33 @@ sub _send_event {
    return;
 }
 
+# TODO: Env vars job_name runid namespace(dev, test, live) pid
 sub _run_command {
-   my $self = shift;
+   my $self    = shift;
+   my $pidfile = $self->pidfile;
 
    $self->_set_program_name;
    $self->_send_event('started');
 
    try {
+      local $SIG{TERM} = sub {
+         $pidfile->unlink if $pidfile->exists;
+         kill 'TERM', 0;
+         exit FAILED;
+      };
+
       _chdir($self->directory) if $self->directory;
 
-      my $r = $self->run_cmd($self->command, { expected_rv => 255 });
+      my $result = $self->run_cmd($self->command, { expected_rv => 255 });
 
-      $self->_send_event('finish', $r);
+      $self->_send_event('finish', { rv => $result->rv });
    }
    catch {
       $self->log->error($_);
       $self->_send_event('terminate');
    };
 
+   $pidfile->unlink if $pidfile->exists;
    return OK;
 }
 
