@@ -1,5 +1,6 @@
 Revision history for App::MCP::Worker
 
+          - Implements err and out file
           - Implments kill job
           - Renamed log file and moved to log directory if available
           - Adds archive_file method to Worker

@@ -1,7 +1,7 @@
 package App::MCP::Worker;
 
 use 5.010001;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 33 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 34 $ =~ /\d+/gmx );
 
 use Class::Usul::Cmd::Constants  qw( EXCEPTION_CLASS FAILED FALSE NUL OK
                                      QUOTED_RE SPC TRUE );
@@ -46,7 +46,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 33 $ of L<App::MCP::Worker>
+This documents version v0.2.$Rev: 34 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 
@@ -147,6 +147,14 @@ The directory from which to execute the command
 
 has 'directory' => is => 'ro', isa => Directory | SimpleStr | Undef;
 
+=item C<errfile>
+
+Error output from the command is redirected to this file
+
+=cut
+
+has 'errfile' => is => 'ro', isa => Path | SimpleStr | Undef;
+
 =item C<job_id>
 
 The numeric id of the job record
@@ -154,6 +162,14 @@ The numeric id of the job record
 =cut
 
 has 'job_id' => is => 'ro', isa => NonZeroPositiveInt, default => $PID;
+
+=item C<outfile>
+
+Output from the command is redirected to this file
+
+=cut
+
+has 'outfile' => is => 'ro', isa => Path | SimpleStr | Undef;
 
 =item C<pidfile>
 
@@ -275,7 +291,7 @@ sub create_job : method {
    throw 'Session [_1] create job failed code [_2]: [_3]',
       [$sess_id, $res->{status}, $res->{reason}] unless $res->{success};
 
-   $self->info("SESS[${sess_id}]: " . $res->{content}->{message});
+   $self->info($res->{content}->{message});
    return OK;
 }
 
@@ -286,25 +302,14 @@ Execute the specified command in a detached child process
 =cut
 
 sub dispatch {
-   my $self    = shift;
-   my $pidfile = $self->pidfile;
+   my $self = shift;
 
-   if ($self->command->[0] eq 'kill_job') {
-      return 'File ${pidfile} not found' unless $pidfile->exists;
+   return $self->_kill_job if $self->command->[0] eq 'kill_job';
 
-      my $pid = $pidfile->chomp->getline;
-
-      kill 'TERM', $pid;
-      $pidfile->unlink;
-
-      return "Process ${pid} terminated";
-   }
-
-   my $err     = $self->config->tempdir->catfile('worker.err');
-   my $options = { err => $err, detach => TRUE, ignore_zombies => FALSE };
+   my $options = { detach => TRUE, ignore_zombies => FALSE };
    my $result  = $self->run_cmd([ sub { $self->_run_command } ], $options);
 
-   $pidfile->println($result->pid)->flush;
+   $self->pidfile->println($result->pid)->flush;
 
    return $result->out;
 }
@@ -373,43 +378,58 @@ sub wait_for_file : method {
 }
 
 # Private methods
+sub _kill_job {
+   my $self    = shift;
+   my $pidfile = $self->pidfile;
+
+   return 'File ${pidfile} not found' unless $pidfile->exists;
+
+   my $pid = $pidfile->chomp->getline;
+
+   kill 'TERM', $pid;
+   $pidfile->unlink;
+
+   return "Process ${pid} killed";
+}
+
 sub _send_event {
    my ($self, $transition, $options) = @_;
 
    $options //= {};
 
    my $runid  = $self->runid;
+   my $prefix = "SendEvent.${transition}[${runid}]";
    my $job_id = $options->{job_id} // $self->job_id;
+   my $rv     = $options->{rv};
    my $event  = {
       job_id     => $job_id,
       pid        => $PID,
       runid      => $runid,
       transition => $transition,
    };
-   my $prefix = (pad ucfirst $transition, 9, SPC, 'left') . "[${runid}]: ";
-   my $format = $self->protocol . '://%s:' . $self->port .
-                sprintf $self->config->uri_template->{event}, $runid;
-   my $rv     = $options->{rv};
 
    $event->{rv} = $rv if defined $rv;
 
-   $self->log->debug($prefix . (defined $rv ? "Rv ${rv}" : "Pid ${PID}"));
-   $event = encrypt $self->token, $self->transcoder->encode($event);
+   $self->log->debug("${prefix}: " . (defined $rv ? "Rv ${rv}" : "Pid ${PID}"));
+
+   my $encrypted = encrypt $self->token, $self->transcoder->encode($event);
+   my $path      = sprintf $self->config->uri_template->{event}, $runid;
+   my $template  = $self->protocol . '://%s:' . $self->port . $path;
 
    for my $server (@{$self->servers}) {
       try {
-         my $uri = sprintf $format, $server;
-         my $res = $self->post_as_json($uri, { event => $event });
+         my $uri = sprintf $template, $server;
+         my $res = $self->post_as_json($uri, { event => $encrypted });
 
          unless ($res->{success}) {
             my $message = $self->transcoder->decode($res->{content})->{message};
 
-            throw 'Send event response [_1]', [$res->{status} . SPC . $message];
+            throw 'Post response - [_1]', [$res->{status} . " ${message}"];
          }
 
-         $self->log->debug($prefix . $res->{content}->{message});
+         $self->log->debug("${prefix}: " . $res->{content}->{message});
       }
-      catch { $self->log->error("Failed[${runid}]: ${_}") };
+      catch { $self->log->error("${prefix}: ${_}") };
    }
 
    return;
@@ -419,9 +439,13 @@ sub _send_event {
 sub _run_command {
    my $self    = shift;
    my $pidfile = $self->pidfile;
+   my $runid   = $self->runid;
+   my $options = { expected_rv => 255 };
+
+   $options->{err} = $self->errfile if $self->errfile;
+   $options->{out} = $self->outfile if $self->outfile;
 
    $self->_set_program_name;
-   $self->_send_event('started');
 
    try {
       local $SIG{TERM} = sub {
@@ -430,14 +454,16 @@ sub _run_command {
          exit FAILED;
       };
 
+      $self->_send_event('started');
+
       _chdir($self->directory) if $self->directory;
 
-      my $result = $self->run_cmd($self->command, { expected_rv => 255 });
+      my $result = $self->run_cmd($self->command, $options);
 
       $self->_send_event('finish', { rv => $result->rv });
    }
    catch {
-      $self->log->error($_);
+      $self->log->error("RunCommand[${runid}]: ${_}");
       $self->_send_event('terminate');
    };
 
