@@ -1,7 +1,7 @@
 package App::MCP::Worker;
 
 use 5.010001;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 34 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 35 $ =~ /\d+/gmx );
 
 use Class::Usul::Cmd::Constants  qw( EXCEPTION_CLASS FAILED FALSE NUL OK
                                      QUOTED_RE SPC TRUE );
@@ -46,7 +46,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 34 $ of L<App::MCP::Worker>
+This documents version v0.2.$Rev: 35 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 
@@ -254,11 +254,11 @@ Renames the specified file prefixing it with C<A_>
 
 sub archive_file : method {
    my $self = shift;
+   my $path = $self->next_argv;
 
-   throw Unspecified, ['option path'] unless exists $self->options->{path};
+   throw Unspecified, ['path'] unless $path;
 
-   my $path = io $self->options->{path};
-
+   $path = io $path;
    $path = $path->absolute($self->config->vardir) unless $path->is_absolute;
 
    return throw 'File [_1] not found', ["${path}"] unless $path->exists;
@@ -266,7 +266,7 @@ sub archive_file : method {
    my $archive = $path->parent->catfile('A_' . $path->basename);
 
    $path->move($archive);
-   $self->info('Archived ' . $self->options->{path});
+   $self->info("Archived ${path}");
    return OK;
 }
 
@@ -353,19 +353,20 @@ exit with a non zero return code (fail)
 
 sub wait_for_file : method {
    my $self = shift;
+   my $path = $self->next_argv;
 
-   throw Unspecified, ['option path'] unless exists $self->options->{path};
+   throw Unspecified, ['path'] unless $path;
 
-   my $path = io $self->options->{path};
-
+   $path = io $path;
    $path = $path->absolute($self->config->vardir) unless $path->is_absolute;
 
-   my $delete_first = $self->next_argv // NUL;
+   my $options      = $self->{options};
+   my $delete_first = $self->next_argv // $options->{delete_first} // NUL;
 
    $path->unlink if $delete_first && $path->exists;
 
-   my $rate    = $self->options->{rate} // 5;
-   my $timeout = $self->options->{timeout} // 0;
+   my $rate    = $options->{rate} // 5;
+   my $timeout = $options->{timeout} // 0;
 
    while (!$path->exists) {
       throw 'Timedout after [_1] seconds', [$timeout]

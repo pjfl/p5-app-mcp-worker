@@ -1,5 +1,6 @@
 Revision history for App::MCP::Worker
 
+          - Improved cli for archive_file and wait_for_file
           - Implements err and out file
           - Implments kill job
           - Renamed log file and moved to log directory if available
