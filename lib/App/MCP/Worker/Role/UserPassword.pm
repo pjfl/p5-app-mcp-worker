@@ -2,9 +2,8 @@ package App::MCP::Worker::Role::UserPassword;
 
 use Class::Usul::Cmd::Constants qw( AS_PASSWORD EXCEPTION_CLASS FALSE NUL TRUE);
 use File::DataClass::Types      qw( Path );
-use Class::Usul::Cmd::Util      qw( decrypt encrypt );
+use Class::Usul::Cmd::Util      qw( decrypt encrypt load_file dump_file );
 use Unexpected::Functions       qw( throw Unspecified );
-use File::DataClass::Schema;
 use Moo::Role;
 
 requires qw( config get_line );
@@ -15,18 +14,14 @@ has 'rc_file' =>
    coerce  => TRUE,
    default => sub { shift->config->home->catfile('.mcprc.json') };
 
-has '_file_schema' =>
-   is      => 'lazy',
-   default => sub { File::DataClass::Schema->new(storage_class => 'Any') };
-
 # Public methods
 sub get_user_password {
    my ($self, $user_name) = @_;
 
    throw Unspecified, ['user name'] unless $user_name;
 
-   my $data     = $self->_local_config;
-   my $password = $data->{users}->{$user_name};
+   my $data     = $self->local_config;
+   my $password = $data->{"${user_name}_password"};
 
    if ($password) { $password = decrypt NUL, $password }
    else { $password = $self->get_line('+Enter password', AS_PASSWORD) };
@@ -49,30 +44,29 @@ sub set_user_password {
 
    throw Unspecified, ['password'] unless $password;
 
-   my $data = $self->_local_config;
+   my $data = $self->local_config;
 
-   $data->{users}->{$user_name} = encrypt NUL, $password;
+   $data->{"${user_name}_password"} = encrypt NUL, $password;
 
-   $self->_local_config($data);
+   $self->local_config($data);
    $self->info('Updated user password', { name => 'Worker.set_user_password' });
    return;
 }
 
 # Private methods
-sub _local_config {
+sub local_config {
    my ($self, $data) = @_;
 
    my $path = $self->rc_file;
-   my $default = { users => {} };
 
    if ($data) {
-      $self->_file_schema->dump({ path => $path->assert, data => $data });
+      dump_file($path->assert, $data);
       return $data;
    }
 
-   return $self->_file_schema->load($path) // $default if $path->exists;
+   return load_file($path, TRUE) // {} if $path->exists;
 
-   return $default;
+   return {};
 }
 
 use namespace::autoclean;

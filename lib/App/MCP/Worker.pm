@@ -1,7 +1,7 @@
 package App::MCP::Worker;
 
 use 5.010001;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 35 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 36 $ =~ /\d+/gmx );
 
 use Class::Usul::Cmd::Constants  qw( EXCEPTION_CLASS FAILED FALSE NUL OK
                                      QUOTED_RE SPC TRUE );
@@ -46,7 +46,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 35 $ of L<App::MCP::Worker>
+This documents version v0.2.$Rev: 36 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 
@@ -241,6 +241,7 @@ Instantiates the log object if we do not already have one
 sub BUILD {
    my $self = shift;
 
+   # So that the log object can use our config
    $self->log(App::MCP::Worker::Log->new(builder => $self)) unless $self->log;
 
    return;
@@ -278,7 +279,7 @@ Posts a new job to the server
 
 sub create_job : method {
    my $self    = shift;
-   my $trans   = $self->transcoder;
+   my $trans   = $self->json_parser;
    my $server  = $self->servers->[0];
    my $tplate  = $self->config->uri_template;
    my $uri     = $self->protocol . "://${server}:" . $self->port;
@@ -286,7 +287,7 @@ sub create_job : method {
    my $job     = encrypt $sess->{shared_secret}, $trans->encode($self->job);
    my $sess_id = $sess->{id};
       $uri    .= sprintf $tplate->{job}, $sess_id;
-   my $res     = $self->post_as_json($uri, { job => $job });
+   my $res     = $self->signed_post($uri, { job => $job });
 
    throw 'Session [_1] create job failed code [_2]: [_3]',
       [$sess_id, $res->{status}, $res->{reason}] unless $res->{success};
@@ -399,7 +400,7 @@ sub _send_event {
    $options //= {};
 
    my $runid  = $self->runid;
-   my $prefix = "SendEvent.${transition}[${runid}]";
+   my $leader = "Worker.send_event[${runid}]";
    my $job_id = $options->{job_id} // $self->job_id;
    my $rv     = $options->{rv};
    my $event  = {
@@ -408,29 +409,32 @@ sub _send_event {
       runid      => $runid,
       transition => $transition,
    };
+   my $message = "Transition ${transition} pid ${PID}";
 
-   $event->{rv} = $rv if defined $rv;
+   if (defined $rv) {
+      $event->{rv} = $rv;
+      $message = "Transition ${transition} rv ${rv}"
+   }
 
-   $self->log->debug("${prefix}: " . (defined $rv ? "Rv ${rv}" : "Pid ${PID}"));
+   $self->log->debug("${leader}: ${message}");
 
-   my $encrypted = encrypt $self->token, $self->transcoder->encode($event);
+   my $encrypted = encrypt $self->token, $self->json_parser->encode($event);
    my $path      = sprintf $self->config->uri_template->{event}, $runid;
    my $template  = $self->protocol . '://%s:' . $self->port . $path;
 
    for my $server (@{$self->servers}) {
       try {
-         my $uri = sprintf $template, $server;
-         my $res = $self->post_as_json($uri, { event => $encrypted });
+         my $uri     = sprintf $template, $server;
+         my $res     = $self->signed_post($uri, { event => $encrypted });
+         my $message = $res->{content}->{message} // 'No content message';
+         my $error   = ($res->{reason} ? $res->{reason} . ': ' : NUL).$message;
+         my $status  = $res->{status};
 
-         unless ($res->{success}) {
-            my $message = $self->transcoder->decode($res->{content})->{message};
+         throw "Post response - ${status} ${error}" unless $res->{success};
 
-            throw 'Post response - [_1]', [$res->{status} . " ${message}"];
-         }
-
-         $self->log->debug("${prefix}: " . $res->{content}->{message});
+         $self->log->debug("${leader}: ${message}");
       }
-      catch { $self->log->error("${prefix}: ${_}") };
+      catch { $self->log->error("${leader}: ${_}") };
    }
 
    return;
@@ -464,7 +468,7 @@ sub _run_command {
       $self->_send_event('finish', { rv => $result->rv });
    }
    catch {
-      $self->log->error("RunCommand[${runid}]: ${_}");
+      $self->log->error("Worker.run_command[${runid}]: ${_}");
       $self->_send_event('terminate');
    };
 

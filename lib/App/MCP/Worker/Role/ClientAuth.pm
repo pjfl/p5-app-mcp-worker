@@ -21,6 +21,43 @@ use Class::Usul::Cmd::Options;
 
 requires qw( config get_user_password log );
 
+=pod
+
+=encoding utf-8
+
+=head1 Name
+
+App::MCP::Worker::Role::ClientAuth - Client Authentication
+
+=head1 Synopsis
+
+   use Moo;
+
+   with 'App::MCP::Worker::Role::ClientAuth';
+
+=head1 Description
+
+Client Authentication
+
+=head1 Configuration and Environment
+
+Defines the following attributes;
+
+=over 3
+
+=item C<json_parser>
+
+=cut
+
+has 'json_parser' =>
+   is      => 'lazy',
+   isa     => class_type(JSON::MaybeXS::JSON),
+   default => sub { JSON::MaybeXS->new( convert_blessed => TRUE )  };
+
+=item C<key_id>
+
+=cut
+
 option 'key_id' =>
    is            => 'lazy',
    isa           => NonEmptySimpleStr,
@@ -28,6 +65,10 @@ option 'key_id' =>
    default       => sub { lc distname shift->config->appclass },
    format        => 's',
    short         => 'k';
+
+=item C<user_name>
+
+=cut
 
 option 'user_name' =>
    is            => 'lazy',
@@ -46,19 +87,25 @@ has '_srp' =>
    default => sub { Crypt::SRP->new( 'RFC5054-2048bit', 'SHA512' ) },
    reader  => 'srp';
 
-has '_transcoder' =>
-   is      => 'lazy',
-   isa     => class_type(JSON::MaybeXS::JSON),
-   default => sub { JSON::MaybeXS->new( convert_blessed => TRUE )  },
-   reader  => 'transcoder';
-
 has '_user_agent'  =>
    is      => 'lazy',
    isa     => class_type('HTTP::Tiny'),
-   default => sub { HTTP::Tiny->new( timeout => shift->_fetch_timeout ) },
-   reader  => 'user_agent';
+   default => sub { HTTP::Tiny->new( timeout => shift->_fetch_timeout ) };
 
-# Public methods
+=back
+
+=head1 Subroutines/Methods
+
+Defines the following methods;
+
+=over 3
+
+=item C<authenticate_session>
+
+   $hash_ref = $self->authenticate_session($uri, \%options?);
+
+=cut
+
 sub authenticate_session {
    my ($self, $uri, $opts) = @_;
 
@@ -74,18 +121,18 @@ sub authenticate_session {
 
    my $keys_uri = $uri . sprintf $opts->{template}->{exchange_keys}, $username;
    my $pub_key  = encode_base64 $raw_key;
-   my $res      = $self->get_with_sig($keys_uri, { public_key => $pub_key });
+   my $res      = $self->signed_get($keys_uri, { public_key => $pub_key });
    my $token    = $self->_compute_token($username, $password, $res);
    my $auth_uri = $uri . sprintf $opts->{template}->{authenticate}, $username;
 
-   $res = $self->post_as_json($auth_uri, { M1_token => $token });
+   $res = $self->signed_post($auth_uri, { M1_token => $token });
 
-   throw 'User [_1] authentication failure code [_2]: [_3]',
-      [$username, $res->{status}, $res->{reason}] unless $res->{success};
+   throw 'User [_1] authentication failed: [_2]',
+      [$username, $res->{status} . ' ' . $res->{reason}] unless $res->{success};
 
    my $content  = $res->{content};
 
-   throw 'User [_1] M2 token verification failure', [$username]
+   throw 'User [_1] M2 token verification failed', [$username]
       unless $self->srp->client_verify_M2(decode_base64 $content->{M2_token});
 
    $self->log->debug("User ${username} Session-Id " . $content->{id});
@@ -95,7 +142,13 @@ sub authenticate_session {
    return { id => $content->{id}, shared_secret => $shared_secret };
 }
 
-sub get_with_sig {
+=item C<signed_get>
+
+   $hash_ref = $self->signed_get($uri, \%query_parameters?);
+
+=cut
+
+sub signed_get {
    my ($self, $uri, $content) = @_;
 
    my $query = NUL;
@@ -117,12 +170,18 @@ sub get_with_sig {
    return $self->_decoded_response_to_signed_request($signer->sign($req));
 }
 
-sub post_as_json {
+=item C<signed_post>
+
+   $hash_ref = $self->signed_post($uri, $content);
+
+=cut
+
+sub signed_post {
    my ($self, $uri, $content) = @_;
 
    my $digest = Digest->new('SHA-512');
 
-   $content = $self->transcoder->encode($content);
+   $content = $self->json_parser->encode($content);
    $digest->add($content);
 
    my $req = POST $uri,
@@ -168,11 +227,11 @@ sub _decoded_response_to_signed_request {
    $req->remove_header('::std_case'); # Strange artifact
 
    my $options = { content => $req->content, headers => $req->headers };
-   my $res     = $self->user_agent->request($req->method, $req->uri, $options);
+   my $res     = $self->_user_agent->request($req->method, $req->uri, $options);
 
    return $res unless $res->{success};
 
-   try   { $res->{content} = $self->transcoder->decode($res->{content}) }
+   try   { $res->{content} = $self->json_parser->decode($res->{content}) }
    catch { $res->{reason} = "${_}"; $res->{success} = FALSE };
 
    return $res;
@@ -198,47 +257,7 @@ use namespace::autoclean;
 
 __END__
 
-=pod
-
-=encoding utf-8
-
-=head1 Name
-
-App::MCP::Worker::Role::ClientAuth - Client Authentication
-
-=head1 Synopsis
-
-   use Moo;
-
-   with 'App::MCP::Worker::Role::ClientAuth';
-
-=head1 Description
-
-Client Authentication
-
-=head1 Configuration and Environment
-
-Defines the following attributes;
-
-=over 3
-
-=item C<key_id>
-
-=item C<user_name>
-
 =back
-
-=head1 Subroutines/Methods
-
-Defines the following methods;
-
-=over 3
-
-=item C<authenticate_session>
-
-=item C<get_with_sig>
-
-=item C<post_as_json>
 
 =head1 Diagnostics
 
