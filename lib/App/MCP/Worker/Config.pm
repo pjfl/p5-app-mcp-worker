@@ -1,7 +1,7 @@
 package App::MCP::Worker::Config;
 
 use Class::Usul::Cmd::Constants qw( FALSE TRUE );
-use File::DataClass::Types      qw( Directory Path HashRef Str );
+use File::DataClass::Types      qw( Directory Path HashRef Int Str );
 use Class::Usul::Cmd::Util      qw( distname );
 use File::DataClass::IO         qw( io );
 use Moo;
@@ -32,6 +32,8 @@ has 'logfile' =>
    };
 
 has 'home' => is => 'ro', isa => Directory, default => sub { io '.' };
+
+has 'port' => is => 'ro', isa => Int, default => 2012;
 
 has 'prefix' => is => 'ro', isa => Str, default => 'mcp';
 

@@ -1,7 +1,7 @@
 package App::MCP::Worker;
 
 use 5.010001;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 36 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 37 $ =~ /\d+/gmx );
 
 use Class::Usul::Cmd::Constants  qw( EXCEPTION_CLASS FAILED FALSE NUL OK
                                      QUOTED_RE SPC TRUE );
@@ -12,6 +12,7 @@ use File::DataClass::IO          qw( io );
 use Web::ComposableRequest::Util qw( bson64id );
 use Class::Usul::Cmd::Util       qw( elapsed encrypt ensure_class_loaded pad );
 use English                      qw( -no_match_vars );
+use Ref::Util                    qw( is_hashref );
 use Type::Utils                  qw( as coerce from subtype via );
 use Unexpected::Functions        qw( throw Unspecified );
 use App::MCP::Worker::Log;
@@ -46,7 +47,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 36 $ of L<App::MCP::Worker>
+This documents version v0.2.$Rev: 37 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 
@@ -89,10 +90,10 @@ line with C<-p>
 =cut
 
 option 'port' =>
-   is            => 'ro',
+   is            => 'lazy',
    isa           => NonZeroPositiveInt,
    documentation => 'Port number for the remote servers. Defaults to 2012',
-   default       => 2012,
+   default       => sub { shift->config->port },
    format        => 'i',
    short         => 'p';
 
@@ -288,9 +289,10 @@ sub create_job : method {
    my $sess_id = $sess->{id};
       $uri    .= sprintf $tplate->{job}, $sess_id;
    my $res     = $self->signed_post($uri, { job => $job });
+   my $message = $res->{message};
 
-   throw 'Session [_1] create job failed code [_2]: [_3]',
-      [$sess_id, $res->{status}, $res->{reason}] unless $res->{success};
+   throw "Session [_1] create job failed. ${message}", [$sess_id]
+      unless $res->{success};
 
    $self->info($res->{content}->{message});
    return OK;
@@ -399,17 +401,17 @@ sub _send_event {
 
    $options //= {};
 
-   my $runid  = $self->runid;
-   my $leader = "Worker.send_event[${runid}]";
-   my $job_id = $options->{job_id} // $self->job_id;
-   my $rv     = $options->{rv};
-   my $event  = {
+   my $runid   = $self->runid;
+   my $leader  = "Worker.send_event[${runid}]";
+   my $message = "Transition ${transition} pid ${PID}";
+   my $job_id  = $options->{job_id} // $self->job_id;
+   my $rv      = $options->{rv};
+   my $event   = {
       job_id     => $job_id,
       pid        => $PID,
       runid      => $runid,
       transition => $transition,
    };
-   my $message = "Transition ${transition} pid ${PID}";
 
    if (defined $rv) {
       $event->{rv} = $rv;
@@ -424,8 +426,12 @@ sub _send_event {
 
    for my $server (@{$self->servers}) {
       try {
-         my $uri     = sprintf $template, $server;
-         my $res     = $self->signed_post($uri, { event => $encrypted });
+         my $uri = sprintf $template, $server;
+         my $res = $self->signed_post($uri, { event => $encrypted });
+
+         throw $res unless is_hashref $res;
+         throw $res->{content} unless is_hashref $res->{content};
+
          my $message = $res->{content}->{message} // 'No content message';
          my $error   = ($res->{reason} ? $res->{reason} . ': ' : NUL).$message;
          my $status  = $res->{status};
