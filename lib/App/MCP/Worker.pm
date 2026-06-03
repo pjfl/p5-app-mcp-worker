@@ -1,7 +1,7 @@
 package App::MCP::Worker;
 
 use 5.010001;
-use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 37 $ =~ /\d+/gmx );
+use version; our $VERSION = qv( sprintf '0.2.%d', q$Rev: 38 $ =~ /\d+/gmx );
 
 use Class::Usul::Cmd::Constants  qw( EXCEPTION_CLASS FAILED FALSE NUL OK
                                      QUOTED_RE SPC TRUE );
@@ -47,7 +47,7 @@ App::MCP::Worker - Remotely executed worker process
 
 =head1 Version
 
-This documents version v0.2.$Rev: 37 $ of L<App::MCP::Worker>
+This documents version v0.2.$Rev: 38 $ of L<App::MCP::Worker>
 
 =head1 Synopsis
 
@@ -289,10 +289,8 @@ sub create_job : method {
    my $sess_id = $sess->{id};
       $uri    .= sprintf $tplate->{job}, $sess_id;
    my $res     = $self->signed_post($uri, { job => $job });
-   my $message = $res->{message};
 
-   throw "Session [_1] create job failed. ${message}", [$sess_id]
-      unless $res->{success};
+   throw $res->{message} unless $res->{success};
 
    $self->info($res->{content}->{message});
    return OK;

@@ -1,5 +1,6 @@
 Revision history for App::MCP::Worker
 
+          - Imporved job message
           - Create job now works again
           - Improved robustness of send event
           - Improved cli for archive_file and wait_for_file
